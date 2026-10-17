@@ -1,0 +1,39 @@
+=== Texto normal sobre fondo claro — AA necesita 4.5:1 ===
+  PASA  17.85:1  (min 4.5)  ink-900 sobre blanco 
+  PASA  10.35:1  (min 4.5)  ink-700 sobre blanco 
+  PASA   7.58:1  (min 4.5)  ink-600 sobre blanco (texto secundario) 
+  PASA   4.76:1  (min 4.5)  ink-500 sobre blanco (texto terciario) 
+  PASA  10.78:1  (min 4.5)  navy-700 sobre blanco (titulos) 
+  PASA   8.40:1  (min 4.5)  navy-600 sobre blanco 
+  PASA   7.55:1  (min 4.5)  red-700 sobre blanco (enlaces/acento) 
+  PASA   5.62:1  (min 4.5)  red-600 sobre blanco 
+
+=== Texto blanco sobre superficies de marca — AA 4.5:1 ===
+  PASA  10.78:1  (min 4.5)  blanco sobre navy-700 (boton primario) 
+  PASA  13.67:1  (min 4.5)  blanco sobre navy-800 
+  PASA   5.62:1  (min 4.5)  blanco sobre red-600 (boton urgencia) 
+  PASA   7.55:1  (min 4.5)  blanco sobre red-700 
+
+=== Texto sobre fondos suaves — AA 4.5:1 ===
+  PASA  12.48:1  (min 4.5)  navy-800 sobre navy-50 
+  PASA   8.64:1  (min 4.5)  red-800 sobre red-50 (alerta) 
+  PASA  13.35:1  (min 4.5)  ink-800 sobre ink-100 
+
+=== Semanticos: texto sobre su fondo — AA 4.5:1 ===
+  PASA   6.49:1  (min 4.5)  success sobre success-bg 
+  PASA   6.38:1  (min 4.5)  warning sobre warning-bg 
+  PASA   6.80:1  (min 4.5)  danger sobre danger-bg 
+  PASA   7.15:1  (min 4.5)  info sobre info-bg 
+
+=== Bordes y elementos no textuales — AA 3:1 ===
+  (ink-200/300 quedan SOLO para separadores decorativos: WCAG 1.4.11 no les aplica)
+  PASA   4.76:1  (min 3.0)  border-interactive = ink-500 (borde de input) 
+  PASA   7.58:1  (min 3.0)  icon-default = ink-600 (iconos con significado) 
+  PASA   5.91:1  (min 3.0)  focus-ring = navy-500 
+  PASA  10.78:1  (min 3.0)  icon-on-brand = blanco sobre navy-700 
+
+=== Texto grande (>=24px o 19px bold) — AA 3:1 ===
+  PASA   7.67:1  (min 3.0)  navy-600 sobre navy-50 [grande]
+  PASA   4.21:1  (min 3.0)  red-500 sobre blanco [grande]
+
+RESULTADO: 25/25 combinaciones pasan.

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Encabezado } from "@/components/marca";
 import { FormularioPedido } from "./formulario-pedido";
 
 export const metadata: Metadata = {
@@ -19,7 +20,9 @@ export const metadata: Metadata = {
 
 export default function PaginaNuevoPedido() {
   return (
-    <main className="mx-auto w-full max-w-[480px] px-4 pb-16 pt-8">
+    <>
+      <Encabezado />
+      <main className="mx-auto w-full max-w-[480px] px-4 pb-16 pt-8">
       <p className="text-sm font-medium text-text-secondary">
         Paso 1 de 2
       </p>
@@ -32,6 +35,7 @@ export default function PaginaNuevoPedido() {
       <div className="mt-8">
         <FormularioPedido />
       </div>
-    </main>
+      </main>
+    </>
   );
 }

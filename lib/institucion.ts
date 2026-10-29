@@ -1,28 +1,37 @@
 /* ============================================================================
    Institución del MVP
    ----------------------------------------------------------------------------
-   DonaKit se vende a una institución por vez. En esta versión el sistema
-   opera para una sola, así que el centro de salud no se elige: está fijo.
+   DonaKit se vende a una institución por vez. En esta versión el sistema opera
+   para una sola, así que el centro de salud no se elige: está fijo.
 
    Esto NO significa que la tabla `institution` sobre. La base sigue teniendo
-   una fila por institución, y las historias de la landing (US-16 dirección y
-   horarios, US-17 contacto, US-20 requisitos propios) leen de ahí. Lo único
-   que desaparece es que el difusor tenga que elegirla.
+   una fila por institución, y las historias de la landing (dirección y
+   horarios, contacto, requisitos propios) leen de ahí. Lo único que
+   desaparece es que el difusor tenga que elegirla.
 
-   Para vender el sistema a otra institución se cambia este archivo y se carga
-   su fila en la base. Nada más.
+   --------------------------------------------------------------------------
+   LOS VALORES DE ACÁ TIENEN QUE COINCIDIR CON LA FILA DE LA BASE.
 
-   PENDIENTE: reemplazar `id` por el UUID real de Hospital Posadas en la tabla
-   `institution` de Supabase. Sin ese valor el backend va a rechazar el pedido,
-   porque `campaign.institution_id` es una clave foránea.
+   El `id` es el que viaja al backend; el nombre y la ciudad son los que ve la
+   persona antes de enviar. Si se desincronizan, la pantalla dice una cosa y la
+   campaña se guarda con otra.
+
+   Para verificarlo: https://donakit-backend.onrender.com/institutions
+   --------------------------------------------------------------------------
+
+   PENDIENTE: el equipo definió que el MVP va con Hospital Posadas, pero esa
+   fila todavía no está cargada en la base. Mientras tanto apuntamos a
+   Garrahan, que es la única institución existente, para poder probar el
+   circuito completo. Cuando exista Posadas se cambian estos cuatro valores y
+   nada más.
    ========================================================================== */
 
 export const INSTITUCION = {
   /** UUID de la fila en la tabla `institution`. */
-  id: "PENDIENTE-UUID-DE-SUPABASE",
+  id: "63a65bfe-3c92-484e-b658-d3446355e5c2",
 
-  nombre: "Hospital Posadas",
-  ciudad: "El Palomar",
+  nombre: "Hospital Garrahan",
+  ciudad: "CABA",
 
   /** El servicio donde se dona, no el hospital entero. */
   servicio: "Servicio de Hemoterapia",

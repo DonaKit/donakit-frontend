@@ -16,8 +16,16 @@ import type { ValorGrupo } from "./grupos-sanguineos";
    genera el backend y antes de guardar no existe.
    ========================================================================== */
 
-/** Ej.: https://donakit-backend.onrender.com — SIN /api al final. */
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+/* Dirección del backend. SIN /api al final: el servidor responde en la raíz.
+
+   El valor por defecto no es una concesión: las variables NEXT_PUBLIC_ se
+   empaquetan dentro del código que llega al navegador, así que esta dirección
+   es pública de todas formas. Tenerla acá hace que el proyecto funcione recién
+   clonado, sin configurar nada.
+
+   Si algún día se configura NEXT_PUBLIC_API_URL en Vercel, esa gana. */
+const BASE =
+  process.env.NEXT_PUBLIC_API_URL ?? "https://donakit-backend.onrender.com";
 
 /* El backend vive en el plan gratuito de Render, que duerme el servicio tras
    un rato sin uso. El primer pedido después de la siesta puede tardar bastante
@@ -86,14 +94,6 @@ function aCuerpoDePeticion(d: DatosPedido) {
 export async function crearCampania(
   d: DatosPedido,
 ): Promise<Respuesta<CampaniaCreada>> {
-  if (BASE === "") {
-    return {
-      ok: false,
-      error:
-        "Falta configurar la dirección del servidor (NEXT_PUBLIC_API_URL).",
-    };
-  }
-
   // Sin esto, una conexión que no responde deja el botón girando para
   // siempre. Pasa seguido con datos móviles dentro de un hospital.
   const corte = new AbortController();

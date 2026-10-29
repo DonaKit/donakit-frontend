@@ -7,19 +7,24 @@ import type { ValorGrupo } from "./grupos-sanguineos";
    Un único lugar donde el frontend sabe que existe una API. Los componentes
    llaman a estas funciones y no conocen rutas, cabeceras ni códigos HTTP.
 
-   FLUJO ACORDADO (28/10, con Adán):
-   la campaña se crea al pedir la previsualización, no al confirmar. El backend
-   devuelve el slug, y con ese slug el frontend arma el QR real. Confirmar
-   después solo cambia el estado de DRAFT a ACTIVE.
+   FLUJO (documentado por el backend, 29/10):
+   la campaña se crea al pedir la previsualización, no al confirmar. Nace en
+   DRAFT, el backend devuelve el slug, y con ese slug el frontend arma el QR
+   real. Confirmar después es PATCH /campaigns/:id/confirm.
 
    Sin eso, el QR de la previsualización tendría que ser falso: el slug lo
    genera el backend y antes de guardar no existe.
    ========================================================================== */
 
+/** Ej.: https://donakit-backend.onrender.com — SIN /api al final. */
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-/** Más de esto y damos la conexión por perdida. */
-const ESPERA_MAXIMA_MS = 15_000;
+/* El backend vive en el plan gratuito de Render, que duerme el servicio tras
+   un rato sin uso. El primer pedido después de la siesta puede tardar bastante
+   porque la instancia tiene que levantarse. Por eso la espera es generosa:
+   cortar a los 15 segundos haría fallar justo la primera carga, que es la que
+   todos ven en una demo. */
+const ESPERA_MAXIMA_MS = 40_000;
 
 /* ----------------------------------------------------------------- Tipos */
 
@@ -49,26 +54,26 @@ export type Respuesta<T> =
 /* ------------------------------------------------------------- Traducción */
 
 /**
- * El formulario trabaja con los nombres que usa la pantalla; el backend espera
- * los suyos. La traducción vive acá y en ningún otro lado: si el DTO cambia un
- * nombre, se toca esta función y nada más.
+ * El formulario trabaja con los nombres de la pantalla; el backend espera los
+ * suyos. La traducción vive acá y en ningún otro lado.
  *
- * PENDIENTE: confirmar con Adán los nombres exactos de `CreateCampaignDto`
- * (US-01/ST-04). Están puestos como los de la tabla `campaign`, que es la
- * apuesta más probable, pero no está verificado.
+ * El backend acepta camelCase y snake_case, pero su documentación usa
+ * camelCase, así que mandamos eso: si algún día sacan el middleware de
+ * compatibilidad, lo que queda en pie es la forma documentada.
  */
 function aCuerpoDePeticion(d: DatosPedido) {
   return {
-    institution_id: INSTITUCION.id,
-    patient_name: d.nombre.trim(),
+    institutionId: INSTITUCION.id,
+    patientName: d.nombre.trim(),
 
-    // null, no ausente: el pedido acepta cualquier grupo.
-    blood_type: d.grupo,
+    // El backend exige bloodType siempre, y tiene un valor para "cualquiera".
+    // En la pantalla eso es "Todos", que internamente guardamos como null.
+    bloodType: d.grupo ?? "TODOS",
 
-    // Los opcionales viajan como null cuando no se informaron. Mandar null
-    // es más explícito que omitir la clave: deja claro que se preguntó.
+    // Los opcionales viajan como null cuando no se informaron. Mandar null es
+    // más explícito que omitir la clave: deja claro que se preguntó.
     deadline: d.fecha || null,
-    target_donors: d.donantes === "" ? null : Number(d.donantes),
+    targetDonors: d.donantes === "" ? null : Number(d.donantes),
     observations: d.observaciones.trim() || null,
   };
 }
@@ -95,7 +100,7 @@ export async function crearCampania(
   const reloj = setTimeout(() => corte.abort(), ESPERA_MAXIMA_MS);
 
   try {
-    const r = await fetch(`${BASE}/api/campaigns`, {
+    const r = await fetch(`${BASE}/campaigns`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(aCuerpoDePeticion(d)),
@@ -104,14 +109,13 @@ export async function crearCampania(
 
     if (!r.ok) return { ok: false, error: await mensajeDeError(r) };
 
-    const j = await r.json();
+    // El backend envuelve todo en { success, message, data }.
+    const sobre = await r.json();
+    const c = sobre.data;
+
     return {
       ok: true,
-      datos: {
-        id: j.id,
-        slug: j.slug,
-        editToken: j.edit_token ?? j.editToken,
-      },
+      datos: { id: c.id, slug: c.slug, editToken: c.editToken },
     };
   } catch (e) {
     // AbortError es nuestro propio reloj; cualquier otra cosa es que el
@@ -131,10 +135,23 @@ export async function crearCampania(
 /**
  * Traduce un error del servidor a algo que una persona pueda leer.
  *
- * Nunca se muestra el texto crudo del backend: puede venir en inglés, puede
- * nombrar columnas de la base, y puede filtrar detalles de implementación.
+ * El backend devuelve mensajes por campo, en castellano y ya redactados para
+ * una persona. Cuando están, se usan: dicen qué dato arreglar, que es mucho
+ * más útil que un "revisá los datos" genérico.
  */
 async function mensajeDeError(r: Response): Promise<string> {
+  let cuerpo: { errors?: Record<string, string[]> } | null = null;
+  try {
+    cuerpo = await r.json();
+  } catch {
+    // Una respuesta de error sin JSON legible: seguimos con los genéricos.
+  }
+
+  if (cuerpo?.errors) {
+    const primero = Object.values(cuerpo.errors).flat()[0];
+    if (typeof primero === "string" && primero !== "") return primero;
+  }
+
   if (r.status === 400 || r.status === 422) {
     return "Alguno de los datos no es válido. Revisalos y probá de nuevo.";
   }

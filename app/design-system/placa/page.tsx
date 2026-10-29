@@ -28,7 +28,7 @@ const CASOS: { titulo: string; nota: string; datos: DatosPlaca }[] = [
   },
   {
     titulo: "Nombre largo",
-    nota: "Dos líneas. El tercer apellido se corta con puntos suspensivos.",
+    nota: "El renglón del paciente achica la letra hasta entrar; si ni así entra, corta con puntos suspensivos.",
     datos: {
       nombre: "María de los Ángeles Rodríguez Etchebarne",
       grupo: "AB-",
@@ -50,7 +50,7 @@ const CASOS: { titulo: string; nota: string; datos: DatosPlaca }[] = [
   },
   {
     titulo: "Sin fecha ni cantidad",
-    nota: "Los dos opcionales vacíos. No quedan huecos ni etiquetas sueltas.",
+    nota: 'Sin cantidad la etiqueta dice "Pedido de donación"; sin fecha desaparece esa fila.',
     datos: {
       nombre: "Ana Suárez",
       grupo: "B+",
@@ -72,7 +72,7 @@ const CASOS: { titulo: string; nota: string; datos: DatosPlaca }[] = [
   },
   {
     titulo: "Cantidad alta",
-    nota: "Dos dígitos: la etiqueta de urgencia crece y sigue entrando.",
+    nota: "Dos dígitos: la etiqueta de arriba crece y no choca con el logo.",
     datos: {
       nombre: "Centro de Hemoterapia",
       grupo: "0-",

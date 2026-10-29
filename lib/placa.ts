@@ -4,16 +4,23 @@ import { INSTITUCION } from "./institucion";
 /* ============================================================================
    US-03/ST-03 — Generador de la placa 1:1 en el navegador
    ----------------------------------------------------------------------------
-   Dibuja la placa de 1080×1080 con el canvas nativo, siguiendo la
-   especificación de US-03/ST-02. Las medidas de MEDIDAS salen de ahí.
+   Dibuja la placa de 1080×1080 con el canvas nativo. El diseño sigue el
+   modelo que propuso Adán (fondo claro, grupo sanguíneo dominante, lista con
+   íconos, requisitos y franja institucional con el QR), con tres ajustes:
+
+   - El QR es más grande que en el modelo. Medido: al 15% del ancho deja de
+     leerse cuando WhatsApp reduce la imagen; a este tamaño aguanta hasta
+     ~640 px con compresión JPEG.
+   - La etiqueta de arriba dice cuántos donantes se necesitan cuando el pedido
+     lo informa. Si no, dice "Pedido de donación", como en el modelo.
+   - Se agrega una fila con la fecha límite cuando existe. El formulario la
+     pide; si la placa no la muestra, el dato no sirve para nada.
 
    POR QUÉ CANVAS Y NO CAPTURAR EL HTML A IMAGEN
-   La especificación está escrita en coordenadas justamente para que un
-   generador la reproduzca sin interpretar nada. Con canvas es traducción
-   directa. Un capturador de HTML (html2canvas y parientes) es una
-   *aproximación* de cómo el navegador dibuja: hay que incrustarle las fuentes
-   aparte, falla con bordes redondeados y sombras, y pesa bastante más que
-   esto.
+   Un capturador de HTML (html2canvas y parientes) es una *aproximación* de
+   cómo el navegador dibuja: hay que incrustarle las fuentes aparte, falla con
+   bordes redondeados y sombras, y pesa bastante más que esto. Con canvas cada
+   medida es exacta y el resultado es el mismo en cualquier navegador.
 
    El resultado es un Blob PNG, que sirve igual para descargar, para
    previsualizar y para subir al backend (US-03/ST-04).
@@ -36,128 +43,194 @@ export interface DatosPlaca {
 
 const M = {
   lienzo: 1080,
-  margen: 80,
+  /** Borde izquierdo y derecho del contenido. */
+  x0: 86,
+  x1: 994,
 
-  logo: 46,
-  pill: { texto: 26, padX: 28, padY: 14 },
+  tarjeta: { margen: 36, radio: 32, borde: 2 },
 
-  grupo: {
-    arriba: 52,
-    padX: 56,
-    padY: 34,
-    radio: 28,
-    etiqueta: 30,
-    valor: 168,
+  logo: { gota: 56, texto: 58, base: 142 },
+  pill: { texto: 26, alto: 64, padX: 26, gota: 24 },
+
+  grupo: { arriba: 200, alto: 214, radio: 22, etiqueta: 70, valor: 196 },
+
+  lista: {
+    /** Línea base de la primera fila. */
+    primera: 486,
+    /** Línea base máxima de la última fila: abajo están los requisitos. */
+    ultima: 742,
+    espacioMax: 72,
+    icono: 42,
+    xIcono: 134,
+    xTexto: 204,
+    texto: 40,
+    textoMinimo: 30,
   },
 
-  quien: {
-    arriba: 48,
-    etiqueta: 26,
-    nombre: 72,
-    /** Cuando el nombre necesita dos líneas se achica hasta entrar. */
-    nombreMinimo: 52,
-    interlineado: 1.05,
-  },
-
-  /* La sede se ancla HACIA ARRIBA desde el pie, no hacia abajo desde el
-     nombre. Es la diferencia entre que un nombre de dos líneas empuje el
-     hospital encima del QR y que simplemente se coma el aire del medio. */
-  sede: { nombre: 38, detalle: 34, sobreElPie: 46, entreLineas: 46 },
+  requisitos: { arriba: 772, alto: 62, texto: 28, textoMinimo: 22 },
 
   pie: {
-    qr: 220,
-    qrRadio: 20,
-    qrPad: 14,
-    texto: 32,
-    /** Por debajo de esto la URL no se achica más: deja de leerse. */
-    textoMinimo: 22,
-    separacion: 32,
+    franja: 970,
+    qr: 210,
+    qrPad: 12,
+    qrX: 72,
+    qrAbajo: 16,
+    texto: 38,
+    textoMinimo: 28,
   },
 } as const;
 
 /* Los colores son los tokens del design system. El canvas no lee CSS, así que
-   van literales — es el mismo motivo por el que la especificación los lista.
-   El token de origen va al lado para que se pueda verificar contra
-   globals.css: si alguien cambia la paleta, acá se ve qué hay que tocar. */
+   van literales. El token de origen va al lado para que se pueda verificar
+   contra globals.css: si alguien cambia la paleta, acá se ve qué tocar. */
 const C = {
-  fondo: "#283e60", //      --color-surface-brand
-  rojo: "#c62540", //       --color-red-600
-  blanco: "#ffffff", //     --color-text-on-brand
-  rosaSuave: "#fac6cc", //  --color-red-200
-  acento: "#f59ca7", //     --color-red-300
-  secundario: "#bfd0e6", // --color-navy-200
-  qrOscuro: "#0f172a", //   más oscuro que navy-900 a propósito: el contraste
-  //                           del QR lo leen cámaras, no personas.
+  fondo: "#f1f5fa", //       --color-navy-50
+  tarjeta: "#ffffff", //     --color-surface
+  borde: "#e2e8f0", //       --color-border
+  bordeFuerte: "#cbd5e1", // --color-ink-300
+  rojo: "#a41b33", //        --color-red-700
+  rojoSuave: "#fef2f3", //   --color-red-50
+  rojoBorde: "#e03e54", //   --color-red-500
+  marca: "#1e293b", //       --color-ink-800 (mismo "Dona" que el logo web)
+  texto: "#0f172a", //       --color-text-primary
+  textoSuave: "#334155", //  --color-ink-700
+  icono: "#1d2e48", //       --color-navy-800
+  franja: "#1d2e48", //      --color-navy-800
+  blanco: "#ffffff",
+  qrOscuro: "#0f172a", //    --color-ink-900: el QR lo leen cámaras, no personas
 } as const;
+
+/* ------------------------------------------------------------------ Íconos */
+
+/* Los mismos íconos que usa la web (lucide-react, licencia ISC), copiados
+   como trazos para dibujarlos en el canvas. Coordenadas en una grilla de
+   24×24, igual que en la librería. */
+type Trazo = { d: string } | { c: [number, number, number] };
+
+const ICONOS = {
+  paciente: [
+    { d: "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" },
+    { c: [12, 7, 4] },
+  ],
+  hospital: [
+    { d: "M12 7v4" },
+    { d: "M14 21v-3a2 2 0 0 0-4 0v3" },
+    { d: "M14 9h-4" },
+    { d: "M18 11h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h2" },
+    { d: "M18 21V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16" },
+  ],
+  sede: [
+    { d: "M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" },
+    { c: [12, 10, 3] },
+  ],
+  horario: [{ c: [12, 12, 10] }, { d: "M12 6v6l4 2" }],
+  fecha: [
+    { d: "M16 14v2.2l1.6 1" },
+    { d: "M16 2v3" },
+    { d: "M21 7.338V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h2.338" },
+    { d: "M3 9h5.859" },
+    { d: "M8 2v3" },
+    { c: [16, 16, 6] },
+  ],
+} satisfies Record<string, Trazo[]>;
+
+const GOTA =
+  "M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z";
+
+function dibujarIcono(
+  ctx: CanvasRenderingContext2D,
+  trazos: Trazo[],
+  x: number,
+  y: number,
+  lado: number,
+  color: string,
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(lado / 24, lado / 24);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const t of trazos) {
+    if ("d" in t) {
+      ctx.stroke(new Path2D(t.d));
+    } else {
+      ctx.beginPath();
+      ctx.arc(t.c[0], t.c[1], t.c[2], 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+/** La gota del logo, rellena. Su caja útil es ~14×20 dentro de la grilla. */
+function dibujarGota(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  alto: number,
+  color: string,
+) {
+  const s = alto / 20;
+  ctx.save();
+  ctx.translate(x - 5 * s, y - 2 * s);
+  ctx.scale(s, s);
+  ctx.fillStyle = color;
+  ctx.fill(new Path2D(GOTA));
+  ctx.restore();
+  return 14 * s; // ancho dibujado
+}
 
 /* ------------------------------------------------------------- Tipografías */
 
-/* next/font descarga las fuentes en build y las registra con un nombre
-   GENERADO: en el navegador no existe ninguna familia llamada "Outfit", sino
-   una tipo `__Outfit_a1b2c3`. El nombre real queda en la variable CSS que
-   layout.tsx expone, así que hay que leerlo de ahí.
-
-   Esto importa más de lo que parece: cuando el canvas no encuentra la familia
-   que le pedís, no avisa. Dibuja con la de reserva y sigue como si nada. La
-   placa saldría con otra letra y el error recién se vería en la imagen. */
+/* next/font registra las fuentes y expone el nombre de la familia en una
+   variable CSS. Se lee de ahí en vez de escribir "Outfit" a mano: el nombre
+   lo decide Next, no nosotros, y cuando el canvas no encuentra la familia no
+   avisa — dibuja con la de reserva y sigue. */
 function familiaDe(variable: string, respaldo: string): string {
-  if (typeof window === "undefined") return respaldo;
   const v = getComputedStyle(document.documentElement)
     .getPropertyValue(variable)
     .trim();
   return v === "" ? respaldo : v;
 }
 
-/** `document.fonts.load` quiere una familia sola, no una lista separada por comas. */
+/** `document.fonts.load` quiere una familia sola, no una lista. */
 function primeraFamilia(lista: string): string {
   return lista.split(",")[0].trim();
 }
 
 /* ------------------------------------------------------------------ Apoyo */
 
-/** Parte un texto en líneas que entren en `ancho`, cortando por palabra. */
-function envolver(
+/**
+ * Elige el cuerpo más grande, entre `max` y `min`, con el que `texto` entra
+ * en `ancho`. Si ni al mínimo entra, lo recorta con puntos suspensivos.
+ * Deja `ctx.font` configurado y devuelve el texto a dibujar.
+ */
+function ajustar(
   ctx: CanvasRenderingContext2D,
   texto: string,
   ancho: number,
-  maxLineas: number,
-): string[] {
-  const palabras = texto.trim().split(/\s+/).filter((p) => p !== "");
-  if (palabras.length === 0) return [];
-
-  const lineas: string[] = [];
-  let actual = "";
-  let i = 0;
-
-  for (; i < palabras.length; i++) {
-    const p = palabras[i];
-    const prueba = actual === "" ? p : `${actual} ${p}`;
-    if (ctx.measureText(prueba).width <= ancho || actual === "") {
-      actual = prueba;
-    } else {
-      lineas.push(actual);
-      actual = p;
-      if (lineas.length === maxLineas) break;
-    }
+  max: number,
+  min: number,
+  fuente: (cuerpo: number) => string,
+): string {
+  let cuerpo = max;
+  ctx.font = fuente(cuerpo);
+  while (ctx.measureText(texto).width > ancho && cuerpo > min) {
+    cuerpo -= 1;
+    ctx.font = fuente(cuerpo);
   }
-  if (lineas.length < maxLineas && actual !== "") {
-    lineas.push(actual);
-    i = palabras.length;
-  }
+  if (ctx.measureText(texto).width <= ancho) return texto;
 
-  // Si quedó texto afuera, la última línea termina en puntos suspensivos.
-  if (i < palabras.length && lineas.length > 0) {
-    let u = lineas[lineas.length - 1];
-    while (u.length > 1 && ctx.measureText(`${u}…`).width > ancho) {
-      u = u.slice(0, -1);
-    }
-    lineas[lineas.length - 1] = `${u}…`;
+  let recorte = texto;
+  while (recorte.length > 1 && ctx.measureText(`${recorte}…`).width > ancho) {
+    recorte = recorte.slice(0, -1);
   }
-  return lineas;
+  return `${recorte.trimEnd()}…`;
 }
 
-/** Rectángulo con esquinas redondeadas. */
-function caja(
+function rectRedondeado(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
@@ -167,7 +240,6 @@ function caja(
 ) {
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, r);
-  ctx.fill();
 }
 
 /** `AAAA-MM-DD` a `DD/MM`, o `DD/MM/AA` si cae en otro año. */
@@ -175,13 +247,6 @@ function formatearFecha(iso: string): string {
   const [a, m, d] = iso.split("-");
   const esteAnio = new Date().getFullYear().toString();
   return a === esteAnio ? `${d}/${m}` : `${d}/${m}/${a.slice(2)}`;
-}
-
-/** Etiqueta de urgencia. Lleva el número solo si el pedido lo informó. */
-function textoUrgencia(donantes: number | null): string {
-  return donantes && donantes > 0
-    ? `SE NECESITAN ${donantes} DONANTES`
-    : "SE NECESITAN DONANTES";
 }
 
 /* -------------------------------------------------------------- Generador */
@@ -197,9 +262,8 @@ export async function generarPlaca11(d: DatosPlaca): Promise<Blob> {
   // Sin esta espera el canvas dibuja con la tipografía de reserva.
   await Promise.all([
     document.fonts.load(`700 ${M.grupo.valor}px ${primeraFamilia(fTitulo)}`),
-    document.fonts.load(`700 ${M.quien.nombre}px ${primeraFamilia(fTitulo)}`),
-    document.fonts.load(`600 ${M.pie.texto}px ${primeraFamilia(fTexto)}`),
-    document.fonts.load(`400 ${M.sede.detalle}px ${primeraFamilia(fTexto)}`),
+    document.fonts.load(`700 ${M.lista.texto}px ${primeraFamilia(fTexto)}`),
+    document.fonts.load(`400 ${M.lista.texto}px ${primeraFamilia(fTexto)}`),
   ]);
 
   const cv = document.createElement("canvas");
@@ -207,164 +271,222 @@ export async function generarPlaca11(d: DatosPlaca): Promise<Blob> {
   cv.height = M.lienzo;
   const ctx = cv.getContext("2d");
   if (!ctx) throw new Error("El navegador no permitió crear el lienzo.");
-
-  const util = M.lienzo - M.margen * 2;
   ctx.textBaseline = "alphabetic";
 
-  // ---------------------------------------------------------------- Fondo
+  const ancho = M.x1 - M.x0;
+
+  // ------------------------------------------------------- Fondo y tarjeta
   ctx.fillStyle = C.fondo;
   ctx.fillRect(0, 0, M.lienzo, M.lienzo);
 
-  // ------------------------------------------------------------ Fila alta
-  const yLogo = M.margen + M.logo;
+  const t = M.tarjeta.margen;
+  rectRedondeado(ctx, t, t, M.lienzo - t * 2, M.lienzo, M.tarjeta.radio);
+  ctx.fillStyle = C.tarjeta;
+  ctx.fill();
+  ctx.lineWidth = M.tarjeta.borde;
+  ctx.strokeStyle = C.borde;
+  ctx.stroke();
 
-  ctx.font = `700 ${M.logo}px ${fTitulo}`;
-  ctx.fillStyle = C.blanco;
-  ctx.fillText("Dona", M.margen, yLogo);
-  const anchoDona = ctx.measureText("Dona").width;
-  ctx.fillStyle = C.acento;
-  ctx.fillText("Kit", M.margen + anchoDona, yLogo);
-
-  const urgencia = textoUrgencia(d.donantes);
-  ctx.font = `600 ${M.pill.texto}px ${fTexto}`;
-  const anchoPill = ctx.measureText(urgencia).width + M.pill.padX * 2;
-  const altoPill = M.pill.texto + M.pill.padY * 2;
-  const xPill = M.lienzo - M.margen - anchoPill;
-  const yPill = yLogo - M.logo * 0.78;
-
-  ctx.fillStyle = C.rojo;
-  caja(ctx, xPill, yPill, anchoPill, altoPill, altoPill / 2);
-  ctx.fillStyle = C.blanco;
-  ctx.fillText(urgencia, xPill + M.pill.padX, yPill + altoPill * 0.68);
-
-  // --------------------------------------------------- Bloque del grupo
-  const yGrupo = yPill + altoPill + M.grupo.arriba;
-  const altoGrupo = M.grupo.valor + M.grupo.padY * 2;
-
-  ctx.fillStyle = C.rojo;
-  caja(ctx, M.margen, yGrupo, util, altoGrupo, M.grupo.radio);
-
-  ctx.font = `600 ${M.grupo.etiqueta}px ${fTexto}`;
-  ctx.fillStyle = C.rosaSuave;
-  const medioGrupo = yGrupo + altoGrupo / 2;
-  ctx.fillText("GRUPO", M.margen + M.grupo.padX, medioGrupo - 6);
-  ctx.fillText(
-    "Y FACTOR",
-    M.margen + M.grupo.padX,
-    medioGrupo + M.grupo.etiqueta + 2,
+  // ------------------------------------------------------------- Logo
+  const anchoGota = dibujarGota(
+    ctx,
+    M.x0,
+    M.logo.base - M.logo.gota + 6,
+    M.logo.gota,
+    C.rojo,
   );
+  const xMarca = M.x0 + anchoGota + 14;
+  ctx.font = `700 ${M.logo.texto}px ${fTitulo}`;
+  ctx.fillStyle = C.marca;
+  ctx.fillText("Dona", xMarca, M.logo.base);
+  ctx.fillStyle = C.rojo;
+  ctx.fillText("Kit", xMarca + ctx.measureText("Dona").width, M.logo.base);
+
+  // ------------------------------------------------- Etiqueta de pedido
+  const etiqueta =
+    d.donantes && d.donantes > 0
+      ? `SE NECESITAN ${d.donantes} DONANTES`
+      : "PEDIDO DE DONACIÓN";
+  ctx.font = `700 ${M.pill.texto}px ${fTexto}`;
+  const anchoEtq = ctx.measureText(etiqueta).width;
+  const anchoPill = M.pill.padX * 2 + M.pill.gota * 0.7 + 12 + anchoEtq;
+  const xPill = M.x1 - anchoPill;
+  const yPill = M.logo.base - M.logo.texto * 0.5 - M.pill.alto / 2 + 4;
+
+  rectRedondeado(ctx, xPill, yPill, anchoPill, M.pill.alto, M.pill.alto / 2);
+  ctx.fillStyle = C.rojoSuave;
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = C.rojoBorde;
+  ctx.stroke();
+
+  const anchoGotita = dibujarGota(
+    ctx,
+    xPill + M.pill.padX,
+    yPill + (M.pill.alto - M.pill.gota) / 2,
+    M.pill.gota,
+    C.rojo,
+  );
+  ctx.fillStyle = C.rojo;
+  ctx.fillText(
+    etiqueta,
+    xPill + M.pill.padX + anchoGotita + 12,
+    yPill + M.pill.alto / 2 + M.pill.texto * 0.36,
+  );
+
+  // ----------------------------------------------------- Grupo y factor
+  const g = M.grupo;
+  rectRedondeado(ctx, M.x0, g.arriba, ancho, g.alto, g.radio);
+  ctx.fillStyle = C.rojo;
+  ctx.fill();
+
+  const medio = g.arriba + g.alto / 2;
+  ctx.fillStyle = C.blanco;
+  ctx.font = `700 ${g.etiqueta}px ${fTitulo}`;
+  ctx.fillText("GRUPO Y", M.x0 + 56, medio - 8);
+  ctx.fillText("FACTOR:", M.x0 + 56, medio + g.etiqueta * 0.86);
 
   // "TODOS" tiene cinco letras y no entra al mismo cuerpo que "0+".
   const valor = d.grupo ?? "TODOS";
-  const cuerpo = valor.length > 3 ? M.grupo.valor * 0.62 : M.grupo.valor;
-  ctx.font = `700 ${cuerpo}px ${fTitulo}`;
-  ctx.fillStyle = C.blanco;
-  const anchoValor = ctx.measureText(valor).width;
-  ctx.fillText(
+  const anchoEtiquetaGrupo = ctx.measureText("FACTOR:").width;
+  // 80 px de aire mínimo entre "FACTOR:" y el valor, para que no se lean
+  // como una sola palabra.
+  const espacioValor = ancho - 56 - anchoEtiquetaGrupo - 80 - 56;
+  const valorAjustado = ajustar(
+    ctx,
     valor,
-    M.lienzo - M.margen - M.grupo.padX - anchoValor,
-    medioGrupo + cuerpo * 0.34,
+    espacioValor,
+    valor.length > 3 ? g.valor * 0.66 : g.valor,
+    g.valor * 0.45,
+    (c) => `700 ${c}px ${fTitulo}`,
   );
-
-  /* El pie se calcula ACÁ aunque se dibuje último: es el ancla del resto. */
-  const yPie = M.lienzo - M.margen - M.pie.qr;
-
-  // La sede cuelga del pie hacia arriba, así el nombre no la empuja.
-  const ySedeDetalle = yPie - M.sede.sobreElPie;
-  const ySedeNombre = ySedeDetalle - M.sede.entreLineas;
-
-  // ------------------------------------------------------ Quién y dónde
-  let y = yGrupo + altoGrupo + M.quien.arriba + M.quien.etiqueta;
-
-  ctx.font = `600 ${M.quien.etiqueta}px ${fTexto}`;
-  ctx.fillStyle = C.secundario;
-  ctx.fillText("DONÁ POR", M.margen, y);
-
-  /* La fecha límite va en esta fila, a la derecha, y no en el pie.
-     Dos motivos: el pie lo necesita entero para la URL, y la fecha es
-     información de urgencia — pertenece arriba, con el resto. */
-  if (d.fecha) {
-    const hasta = `HASTA EL ${formatearFecha(d.fecha)}`;
-    ctx.fillText(hasta, M.lienzo - M.margen - ctx.measureText(hasta).width, y);
-  }
-
-  /* El nombre se achica hasta que el bloque entre entre la etiqueta y la
-     sede. Un nombre de dos líneas a cuerpo completo se monta sobre el
-     hospital; bajarle el cuerpo cuesta menos que recortar el apellido. */
-  const pisoNombre = ySedeNombre - M.sede.nombre - 18;
-  let cuerpoNombre = M.quien.nombre;
-  let lineasNombre: string[] = [];
-
-  for (;;) {
-    ctx.font = `700 ${cuerpoNombre}px ${fTitulo}`;
-    lineasNombre = envolver(ctx, d.nombre, util, 2);
-    const alto =
-      cuerpoNombre * 1.1 +
-      (lineasNombre.length - 1) * cuerpoNombre * M.quien.interlineado;
-    if (y + alto <= pisoNombre || cuerpoNombre <= M.quien.nombreMinimo) break;
-    cuerpoNombre -= 2;
-  }
-
-  ctx.fillStyle = C.blanco;
-  y += cuerpoNombre * 1.1;
-  for (const linea of lineasNombre) {
-    ctx.fillText(linea, M.margen, y);
-    y += cuerpoNombre * M.quien.interlineado;
-  }
-
-  ctx.font = `600 ${M.sede.nombre}px ${fTexto}`;
-  ctx.fillStyle = C.blanco;
-  ctx.fillText(INSTITUCION.nombre, M.margen, ySedeNombre);
-
-  ctx.font = `400 ${M.sede.detalle}px ${fTexto}`;
-  ctx.fillStyle = C.secundario;
+  const cuerpoValor = parseFloat(ctx.font.match(/(\d+(\.\d+)?)px/)?.[1] ?? "0");
   ctx.fillText(
-    `${INSTITUCION.servicio} · ${INSTITUCION.ciudad}`,
-    M.margen,
-    ySedeDetalle,
+    valorAjustado,
+    M.x1 - 56 - ctx.measureText(valorAjustado).width,
+    medio + cuerpoValor * 0.36,
   );
 
-  // ------------------------------------------------------------- Pie
-  const url = `donakit.app/c/${d.slug}`;
+  // ---------------------------------------------------------- Lista
+  type Fila = { icono: Trazo[]; texto: string; negrita: boolean };
+  const filas: Fila[] = [
+    { icono: ICONOS.paciente, texto: `Paciente: ${d.nombre}`, negrita: true },
+    {
+      icono: ICONOS.hospital,
+      texto: `${INSTITUCION.nombre} - ${INSTITUCION.servicioCorto}`,
+      negrita: true,
+    },
+    {
+      icono: ICONOS.sede,
+      texto: `${INSTITUCION.direccion}, ${INSTITUCION.ciudad}`,
+      negrita: false,
+    },
+  ];
+  if (INSTITUCION.horario) {
+    filas.push({ icono: ICONOS.horario, texto: INSTITUCION.horario, negrita: false });
+  }
+  if (d.fecha) {
+    filas.push({
+      icono: ICONOS.fecha,
+      texto: `Donar hasta el ${formatearFecha(d.fecha)}`,
+      negrita: false,
+    });
+  }
 
-  /* El QR se dibuja sobre una placa blanca con su propio margen. Sin zona
-     clara alrededor muchas cámaras no lo reconocen: el borde es parte del
-     código, no decoración. */
-  const lienzoQr = document.createElement("canvas");
-  await QRCode.toCanvas(lienzoQr, `https://${url}`, {
-    margin: 0,
-    width: M.pie.qr - M.pie.qrPad * 2,
-    color: { dark: C.qrOscuro, light: C.blanco },
+  const L = M.lista;
+  const espacio = Math.min(
+    L.espacioMax,
+    filas.length > 1 ? (L.ultima - L.primera) / (filas.length - 1) : L.espacioMax,
+  );
+  const anchoFila = M.x1 - L.xTexto;
+
+  filas.forEach((f, i) => {
+    const base = L.primera + i * espacio;
+    dibujarIcono(ctx, f.icono, L.xIcono, base - L.icono * 0.82, L.icono, C.icono);
+    const peso = f.negrita ? 700 : 400;
+    const texto = ajustar(
+      ctx,
+      f.texto,
+      anchoFila,
+      L.texto,
+      L.textoMinimo,
+      (c) => `${peso} ${c}px ${fTexto}`,
+    );
+    ctx.fillStyle = f.negrita ? C.texto : C.textoSuave;
+    ctx.fillText(texto, L.xTexto, base);
   });
 
+  // ----------------------------------------------------- Requisitos
+  const R = M.requisitos;
+  const xReq = M.x0 + 30;
+  const anchoReq = ancho - 60;
+  rectRedondeado(ctx, xReq, R.arriba, anchoReq, R.alto, 14);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = C.bordeFuerte;
+  ctx.stroke();
+
+  const requisitos = ajustar(
+    ctx,
+    INSTITUCION.requisitos.join(" · "),
+    anchoReq - 48,
+    R.texto,
+    R.textoMinimo,
+    (c) => `500 ${c}px ${fTexto}`,
+  );
+  ctx.fillStyle = C.textoSuave;
+  ctx.fillText(
+    requisitos,
+    xReq + (anchoReq - ctx.measureText(requisitos).width) / 2,
+    R.arriba + R.alto / 2 + 10,
+  );
+
+  // ------------------------------------------------------------ Pie
+  const P = M.pie;
+  ctx.fillStyle = C.franja;
+  ctx.fillRect(0, P.franja, M.lienzo, M.lienzo - P.franja);
+
+  /* El QR va sobre una placa blanca con margen propio: sin zona clara
+     alrededor muchas cámaras no lo reconocen. */
+  const url = `https://donakit.app/c/${d.slug}`;
+  const yQr = M.lienzo - P.qrAbajo - P.qr;
+  rectRedondeado(ctx, P.qrX, yQr, P.qr, P.qr, 18);
   ctx.fillStyle = C.blanco;
-  caja(ctx, M.margen, yPie, M.pie.qr, M.pie.qr, M.pie.qrRadio);
-  ctx.drawImage(lienzoQr, M.margen + M.pie.qrPad, yPie + M.pie.qrPad);
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = C.borde;
+  ctx.stroke();
 
-  const xTexto = M.margen + M.pie.qr + M.pie.separacion;
-  const anchoTexto = M.lienzo - M.margen - xTexto;
+  const lienzoQr = document.createElement("canvas");
+  await QRCode.toCanvas(lienzoQr, url, {
+    margin: 0,
+    width: P.qr - P.qrPad * 2,
+    color: { dark: C.qrOscuro, light: C.blanco },
+  });
+  ctx.drawImage(lienzoQr, P.qrX + P.qrPad, yQr + P.qrPad);
 
-  ctx.font = `400 ${M.pie.texto}px ${fTexto}`;
-  ctx.fillStyle = C.secundario;
-  ctx.fillText("Requisitos, horarios y cómo llegar", xTexto, yPie + 96);
+  // "donakit.app" en negrita y el lema en regular, centrados en la franja.
+  const xLema = P.qrX + P.qr + 36;
+  const anchoLema = M.lienzo - xLema - 48;
+  const dominio = "donakit.app";
+  const lema = "  ·  Doná sangre, salvá vidas";
+  let cuerpoLema: number = P.texto;
+  const medirLema = () => {
+    ctx.font = `700 ${cuerpoLema}px ${fTexto}`;
+    const a = ctx.measureText(dominio).width;
+    ctx.font = `400 ${cuerpoLema}px ${fTexto}`;
+    return a + ctx.measureText(lema).width;
+  };
+  while (medirLema() > anchoLema && cuerpoLema > P.textoMinimo) cuerpoLema -= 1;
 
-  /* La URL se achica hasta entrar. El largo depende del nombre del paciente,
-     que no controlamos: "donantes-ruiz-c40982" y
-     "donantes-maria-de-los-angeles-rodriguez-9f03de" son el mismo campo.
-     Recortarla no es opción — una dirección a medias no lleva a ningún lado. */
-  let cuerpoUrl = M.pie.texto;
-  ctx.font = `600 ${cuerpoUrl}px ${fTexto}`;
-  while (
-    ctx.measureText(url).width > anchoTexto &&
-    cuerpoUrl > M.pie.textoMinimo
-  ) {
-    cuerpoUrl -= 1;
-    ctx.font = `600 ${cuerpoUrl}px ${fTexto}`;
-  }
-  ctx.fillStyle = C.acento;
-  ctx.fillText(url, xTexto, yPie + 96 + M.pie.texto + 16);
+  const baseLema = P.franja + (M.lienzo - P.franja) / 2 + cuerpoLema * 0.36;
+  ctx.fillStyle = C.blanco;
+  ctx.font = `700 ${cuerpoLema}px ${fTexto}`;
+  ctx.fillText(dominio, xLema, baseLema);
+  const anchoDominio = ctx.measureText(dominio).width;
+  ctx.font = `400 ${cuerpoLema}px ${fTexto}`;
+  ctx.fillText(lema, xLema + anchoDominio, baseLema);
 
-  // ------------------------------------------------------------ Salida
+  // ---------------------------------------------------------- Salida
   return new Promise<Blob>((resolver, rechazar) => {
     cv.toBlob(
       (b) => (b ? resolver(b) : rechazar(new Error("No se pudo generar la imagen."))),

@@ -35,4 +35,25 @@ export const INSTITUCION = {
 
   /** El servicio donde se dona, no el hospital entero. */
   servicio: "Servicio de Hemoterapia",
+
+  /** Nombre corto del servicio, para la placa: "Hospital Garrahan - Hemoterapia". */
+  servicioCorto: "Hemoterapia",
+
+  /** Tal cual figura en la base (campo `address`). */
+  direccion: "Combate de los Pozos 1881",
+
+  /* PENDIENTE: el horario existe en la tabla (`business_hours`) pero
+     GET /institutions todavía no lo devuelve. Mientras sea null, la placa
+     omite esa fila: un horario inventado en una placa pública manda gente a
+     un hospital cerrado. */
+  horario: null as string | null,
+
+  /* PROVISORIO: requisitos generales para donar en Argentina. Cada hospital
+     puede sumar los suyos; cuando la base los tenga, se leen de ahí. */
+  requisitos: [
+    "Llevar DNI",
+    "16 a 65 años",
+    "Más de 50 kg",
+    "No ir en ayunas",
+  ],
 } as const;

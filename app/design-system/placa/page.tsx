@@ -1,17 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { generarPlaca11, type DatosPlaca } from "@/lib/placa";
+import { generarPlaca11, generarPlaca916, type DatosPlaca } from "@/lib/placa";
 
 /* ============================================================================
-   Página interna — vista previa de la placa 1:1
+   Página interna — vista previa de las placas 1:1 y 9:16
    ----------------------------------------------------------------------------
-   No es parte del producto: es el banco de pruebas del generador de US-03/ST-03.
+   No es parte del producto: es el banco de pruebas de los generadores de
+   US-03 (cuadrada) y US-04 (vertical).
 
    Existe porque los casos que rompen una placa son los extremos (un nombre de
    cuatro palabras, "TODOS" en lugar de "0+", un pedido sin fecha) y probarlos
-   creando una campaña por cada uno es inviable. Acá se ven los seis de un
-   golpe.
+   creando una campaña por cada uno es inviable. Acá se ven los seis casos en
+   los dos formatos de un golpe.
    ========================================================================== */
 
 const CASOS: { titulo: string; nota: string; datos: DatosPlaca }[] = [
@@ -83,10 +84,11 @@ const CASOS: { titulo: string; nota: string; datos: DatosPlaca }[] = [
   },
 ];
 
-export default function PaginaPlaca() {
-  const [urls, setUrls] = useState<(string | null)[]>(
-    () => CASOS.map(() => null),
-  );
+type Generador = (d: DatosPlaca) => Promise<Blob>;
+
+/** Genera las placas de todos los casos con un generador, una por vez. */
+function usePlacas(generar: Generador) {
+  const [urls, setUrls] = useState<(string | null)[]>(() => CASOS.map(() => null));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -96,7 +98,7 @@ export default function PaginaPlaca() {
     (async () => {
       try {
         for (let i = 0; i < CASOS.length; i++) {
-          const blob = await generarPlaca11(CASOS[i].datos);
+          const blob = await generar(CASOS[i].datos);
           if (!vivo) return;
           const url = URL.createObjectURL(blob);
           creadas.push(url);
@@ -116,17 +118,32 @@ export default function PaginaPlaca() {
       vivo = false;
       for (const u of creadas) URL.revokeObjectURL(u);
     };
-  }, []);
+  }, [generar]);
+
+  return { urls, error };
+}
+
+function Galeria({
+  titulo,
+  descripcion,
+  generar,
+  ancho,
+  alto,
+  columnas,
+}: {
+  titulo: string;
+  descripcion: string;
+  generar: Generador;
+  ancho: number;
+  alto: number;
+  columnas: string;
+}) {
+  const { urls, error } = usePlacas(generar);
 
   return (
-    <main className="mx-auto max-w-5xl px-gutter py-12">
-      <h1 className="font-display text-3xl font-bold text-text-primary">
-        Placa 1:1 — vista previa
-      </h1>
-      <p className="mt-3 max-w-prose text-text-secondary">
-        Generada en el navegador con el canvas, a 1080×1080 reales. Lo que se ve
-        acá es el archivo que se descarga, escalado para que entre en pantalla.
-      </p>
+    <section className="mt-14 first:mt-0">
+      <h2 className="font-display text-2xl font-bold text-text-primary">{titulo}</h2>
+      <p className="mt-2 max-w-prose text-text-secondary">{descripcion}</p>
 
       {error && (
         <p role="alert" className="mt-6 rounded-lg bg-danger-bg p-4 text-danger">
@@ -134,10 +151,13 @@ export default function PaginaPlaca() {
         </p>
       )}
 
-      <div className="mt-10 grid gap-10 sm:grid-cols-2">
+      <div className={`mt-8 grid gap-10 ${columnas}`}>
         {CASOS.map((caso, i) => (
           <figure key={caso.titulo}>
-            <div className="aspect-square overflow-hidden rounded-xl bg-surface-muted ring-1 ring-border">
+            <div
+              className="overflow-hidden rounded-xl bg-surface-muted ring-1 ring-border"
+              style={{ aspectRatio: `${ancho} / ${alto}` }}
+            >
               {urls[i] ? (
                 /* Es un blob local de tamaño conocido; next/image no aporta
                    nada acá y exigiría configurar el dominio. */
@@ -145,8 +165,8 @@ export default function PaginaPlaca() {
                 <img
                   src={urls[i]!}
                   alt={`Placa de ejemplo: ${caso.titulo}`}
-                  width={1080}
-                  height={1080}
+                  width={ancho}
+                  height={alto}
                   className="h-full w-full"
                 />
               ) : (
@@ -156,15 +176,44 @@ export default function PaginaPlaca() {
               )}
             </div>
             <figcaption className="mt-3">
-              <span className="font-semibold text-text-primary">
-                {caso.titulo}
-              </span>
-              <span className="mt-1 block text-sm text-text-secondary">
-                {caso.nota}
-              </span>
+              <span className="font-semibold text-text-primary">{caso.titulo}</span>
+              <span className="mt-1 block text-sm text-text-secondary">{caso.nota}</span>
             </figcaption>
           </figure>
         ))}
+      </div>
+    </section>
+  );
+}
+
+export default function PaginaPlaca() {
+  return (
+    <main className="mx-auto max-w-5xl px-gutter py-12">
+      <h1 className="font-display text-3xl font-bold text-text-primary">
+        Placas — vista previa
+      </h1>
+      <p className="mt-3 max-w-prose text-text-secondary">
+        Generadas en el navegador con el canvas, a tamaño real. Lo que se ve acá
+        es el archivo que se descarga, escalado para que entre en pantalla.
+      </p>
+
+      <div className="mt-12">
+        <Galeria
+          titulo="Cuadrada 1:1 — feed"
+          descripcion="1080×1080, para el feed de Instagram y para mandar por WhatsApp."
+          generar={generarPlaca11}
+          ancho={1080}
+          alto={1080}
+          columnas="sm:grid-cols-2"
+        />
+        <Galeria
+          titulo="Vertical 9:16 — historias"
+          descripcion="1080×1920, para historias de Instagram y estados de WhatsApp."
+          generar={generarPlaca916}
+          ancho={1080}
+          alto={1920}
+          columnas="grid-cols-2 lg:grid-cols-3"
+        />
       </div>
     </main>
   );

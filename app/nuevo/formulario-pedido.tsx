@@ -271,7 +271,7 @@ export function FormularioPedido() {
               ¿Hasta cuándo se necesita?
             </label>
             <p id="fecha-ayuda" className="text-sm text-text-secondary">
-              Si hay una fecha, la placa muestra cuántos días quedan.
+              Si hay una fecha, aparece en las placas: “Donar hasta el 20/11”.
             </p>
             <input
               id="fecha"

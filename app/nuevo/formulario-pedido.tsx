@@ -19,7 +19,12 @@ import {
   DONANTES_MAXIMO,
   OBSERVACIONES_MAXIMO,
 } from "@/lib/validacion-pedido";
-import { crearCampania, type CampaniaCreada } from "@/lib/api";
+import {
+  crearCampania,
+  type CampaniaCreada,
+  type DatosPedido,
+} from "@/lib/api";
+import { PlacaGenerada } from "@/components/placa-generada";
 
 /* ============================================================================
    US-01/ST-01 + ST-02 — Formulario del pedido con validación en tiempo real
@@ -53,11 +58,17 @@ export function FormularioPedido() {
   const [donantes, setDonantes] = useState("");
   const [observaciones, setObservaciones] = useState("");
 
-  // El mínimo del calendario se calcula después del montaje. Si se calculara
-  // durante el render, el servidor y el navegador podrían estar en días
-  // distintos y React avisaría que el HTML no coincide.
+  /* El mínimo del calendario se calcula después del montaje. Si se calculara
+     durante el render, el servidor y el navegador podrían estar en días
+     distintos y React avisaría que el HTML no coincide.
+
+     El reloj del navegador ES un sistema externo a React, y leerlo al montar
+     es exactamente para lo que sirve un efecto. La regla apunta a los efectos
+     que encadenan renders a partir de estado que React ya tiene; acá no hay
+     tal cosa: corre una vez y nunca más. */
   const [hoy, setHoy] = useState("");
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHoy(new Date().toISOString().slice(0, 10));
   }, []);
 
@@ -108,6 +119,12 @@ export function FormularioPedido() {
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
   const [creada, setCreada] = useState<CampaniaCreada | null>(null);
 
+  /* Copia congelada de lo que se envió. La placa se dibuja a partir de esto y
+     no del estado actual: si alguien sigue editando el formulario después de
+     generar, la imagen y el nombre del archivo tienen que seguir diciendo lo
+     que realmente se guardó. */
+  const [enviado, setEnviado] = useState<DatosPedido | null>(null);
+
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
     setTocado({ nombre: true, grupo: true });
@@ -116,13 +133,15 @@ export function FormularioPedido() {
     setEnviando(true);
     setErrorEnvio(null);
 
-    const r = await crearCampania({
+    const pedido: DatosPedido = {
       nombre,
       grupo: grupo ?? null,
       fecha,
       donantes,
       observaciones,
-    });
+    };
+
+    const r = await crearCampania(pedido);
 
     setEnviando(false);
 
@@ -131,9 +150,7 @@ export function FormularioPedido() {
       return;
     }
 
-    // US-05 (Sprint 3) reemplaza esto por la pantalla de previsualización.
-    // Hasta entonces mostramos el slug, que es la prueba de que el circuito
-    // completo funciona de punta a punta.
+    setEnviado(pedido);
     setCreada(r.datos);
   }
 
@@ -347,21 +364,8 @@ export function FormularioPedido() {
 
       <Mensaje id="envio-error" error={errorEnvio} />
 
-      {creada && (
-        <div className="rounded-lg bg-success-bg p-4">
-          <p className="text-base font-semibold text-success">
-            Pedido creado
-          </p>
-          <p className="mt-1 text-sm text-text-secondary">
-            La página del caso va a estar en{" "}
-            <span className="font-semibold text-text-primary">
-              donakit.app/c/{creada.slug}
-            </span>
-          </p>
-          <p className="mt-2 text-sm text-text-secondary">
-            Falta la pantalla de previsualización (US-05, Sprint 3).
-          </p>
-        </div>
+      {creada && enviado && (
+        <PlacaGenerada campania={creada} pedido={enviado} />
       )}
     </form>
   );

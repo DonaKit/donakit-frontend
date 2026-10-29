@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "@/lib/icons";
+import { INSTITUCION } from "@/lib/institucion";
 import {
   GRUPOS,
   ETIQUETA_TODOS,
@@ -9,7 +10,6 @@ import {
 } from "@/lib/grupos-sanguineos";
 import {
   validarNombre,
-  validarInstitucion,
   validarGrupo,
   validarFecha,
   validarDonantes,
@@ -19,6 +19,7 @@ import {
   DONANTES_MAXIMO,
   OBSERVACIONES_MAXIMO,
 } from "@/lib/validacion-pedido";
+import { crearCampania, type CampaniaCreada } from "@/lib/api";
 
 /* ============================================================================
    US-01/ST-01 + ST-02 — Formulario del pedido con validación en tiempo real
@@ -35,21 +36,15 @@ import {
      se corrige, sin esperar a salir de nuevo.
    - Al enviar: se marcan todos los campos y se muestran todos los errores.
 
-   Falta US-01/ST-06: la llamada a POST /api/campaigns, que depende del
-   endpoint de backend (US-01/ST-03 a ST-05).
+   US-01/ST-06: al enviar se crea la campaña en estado DRAFT y el backend
+   devuelve el slug. Con ese slug el front arma el QR real de la
+   previsualización. Confirmar, más adelante, solo cambia el estado.
    ========================================================================== */
 
-const INSTITUCIONES_DEMO = [
-  { id: "1", nombre: "Hospital Garrahan", ciudad: "CABA" },
-  { id: "2", nombre: "Hospital Italiano", ciudad: "CABA" },
-  { id: "3", nombre: "Hospital Posadas", ciudad: "El Palomar" },
-];
-
-type Campo = "nombre" | "institucion" | "grupo";
+type Campo = "nombre" | "grupo";
 
 export function FormularioPedido() {
   const [nombre, setNombre] = useState("");
-  const [institucionId, setInstitucionId] = useState("");
   const [grupo, setGrupo] = useState<ValorGrupo | undefined>(undefined);
 
   // US-02/ST-01 — opcionales. Vacío significa "no lo informaron", y en la base
@@ -68,7 +63,6 @@ export function FormularioPedido() {
 
   const [tocado, setTocado] = useState<Record<Campo, boolean>>({
     nombre: false,
-    institucion: false,
     grupo: false,
   });
 
@@ -76,7 +70,6 @@ export function FormularioPedido() {
     setTocado((t) => (t[campo] ? t : { ...t, [campo]: true }));
 
   const vNombre = validarNombre(nombre);
-  const vInstitucion = validarInstitucion(institucionId);
   const vGrupo = validarGrupo(grupo);
 
   // Un error de campo incompleto espera al blur. Uno de formato se muestra
@@ -84,8 +77,6 @@ export function FormularioPedido() {
   const errNombre = !vNombre.ok && (tocado.nombre || vNombre.inmediato)
     ? vNombre.error
     : null;
-  const errInstitucion =
-    tocado.institucion && !vInstitucion.ok ? vInstitucion.error : null;
   const errGrupo = tocado.grupo && !vGrupo.ok ? vGrupo.error : null;
 
   // El aviso de nombre largo no es un error: se muestra apenas aparece.
@@ -107,17 +98,43 @@ export function FormularioPedido() {
 
   const valido =
     vNombre.ok &&
-    vInstitucion.ok &&
     vGrupo.ok &&
     vFecha.ok &&
     vDonantes.ok &&
     vObservaciones.ok;
 
-  function enviar(e: React.FormEvent) {
+  // US-01/ST-06 — estados del envío.
+  const [enviando, setEnviando] = useState(false);
+  const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
+  const [creada, setCreada] = useState<CampaniaCreada | null>(null);
+
+  async function enviar(e: React.FormEvent) {
     e.preventDefault();
-    setTocado({ nombre: true, institucion: true, grupo: true });
-    if (!valido) return;
-    // US-01/ST-06: POST /api/campaigns
+    setTocado({ nombre: true, grupo: true });
+    if (!valido || enviando) return;
+
+    setEnviando(true);
+    setErrorEnvio(null);
+
+    const r = await crearCampania({
+      nombre,
+      grupo: grupo ?? null,
+      fecha,
+      donantes,
+      observaciones,
+    });
+
+    setEnviando(false);
+
+    if (!r.ok) {
+      setErrorEnvio(r.error);
+      return;
+    }
+
+    // US-05 (Sprint 3) reemplaza esto por la pantalla de previsualización.
+    // Hasta entonces mostramos el slug, que es la prueba de que el circuito
+    // completo funciona de punta a punta.
+    setCreada(r.datos);
   }
 
   return (
@@ -161,47 +178,22 @@ export function FormularioPedido() {
       </div>
 
       {/* --------------------------------------------- Centro de salud */}
-      <div className="flex flex-col gap-2">
-        <label
-          htmlFor="institucion"
-          className="text-base font-semibold text-text-primary"
-        >
-          ¿Dónde se dona?
-        </label>
-        <p id="institucion-ayuda" className="text-sm text-text-secondary">
-          El centro donde está internada la persona o donde pidieron los donantes.
-        </p>
-        <div className="relative">
-          <select
-            id="institucion"
-            name="institucion"
-            value={institucionId}
-            onChange={(e) => {
-              setInstitucionId(e.target.value);
-              marcar("institucion");
-            }}
-            onBlur={() => marcar("institucion")}
-            aria-describedby={
-              errInstitucion ? "institucion-error" : "institucion-ayuda"
-            }
-            aria-invalid={errInstitucion ? true : undefined}
-            className={[
-              "h-14 w-full appearance-none rounded-md border bg-surface px-4 pr-12 text-base text-text-primary",
-              errInstitucion ? "border-danger" : "border-border-interactive",
-            ].join(" ")}
-          >
-            <option value="">Elegí un centro de salud</option>
-            {INSTITUCIONES_DEMO.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.nombre} — {i.ciudad}
-              </option>
-            ))}
-          </select>
-          <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-text-secondary">
-            <Icon name="sede" size={20} />
-          </span>
+      {/* No es un campo: el sistema opera para una sola institución. Pero la
+          información queda a la vista, porque quien carga el pedido tiene que
+          saber dónde se va a donar antes de seguir. */}
+      <div className="flex items-start gap-3 rounded-lg bg-surface-muted p-4">
+        <span className="mt-0.5 shrink-0 text-text-secondary">
+          <Icon name="sede" size={20} />
+        </span>
+        <div>
+          <p className="text-sm text-text-secondary">Se dona en</p>
+          <p className="mt-0.5 text-base font-semibold text-text-primary">
+            {INSTITUCION.nombre}
+          </p>
+          <p className="text-sm text-text-secondary">
+            {INSTITUCION.servicio} · {INSTITUCION.ciudad}
+          </p>
         </div>
-        <Mensaje id="institucion-error" error={errInstitucion} />
       </div>
 
       {/* ------------------------------------------- Grupo sanguíneo */}
@@ -345,15 +337,32 @@ export function FormularioPedido() {
       {/* -------------------------------------------------- Acción */}
       <button
         type="submit"
-        className="mt-1 flex h-14 w-full items-center justify-center gap-2.5 rounded-lg bg-surface-brand text-lg font-semibold text-text-on-brand"
+        disabled={enviando}
+        aria-busy={enviando}
+        className="mt-1 flex h-14 w-full items-center justify-center gap-2.5 rounded-lg bg-surface-brand text-lg font-semibold text-text-on-brand disabled:bg-ink-400"
       >
-        Continuar
-        <Icon name="enlace" size={20} />
+        {enviando ? "Generando el kit…" : "Generar el kit"}
+        {!enviando && <Icon name="placa" size={20} />}
       </button>
 
-      <p className="text-center text-sm text-text-secondary">
-        Después vas a poder agregar la fecha límite y otros datos.
-      </p>
+      <Mensaje id="envio-error" error={errorEnvio} />
+
+      {creada && (
+        <div className="rounded-lg bg-success-bg p-4">
+          <p className="text-base font-semibold text-success">
+            Pedido creado
+          </p>
+          <p className="mt-1 text-sm text-text-secondary">
+            La página del caso va a estar en{" "}
+            <span className="font-semibold text-text-primary">
+              donakit.app/c/{creada.slug}
+            </span>
+          </p>
+          <p className="mt-2 text-sm text-text-secondary">
+            Falta la pantalla de previsualización (US-05, Sprint 3).
+          </p>
+        </div>
+      )}
     </form>
   );
 }

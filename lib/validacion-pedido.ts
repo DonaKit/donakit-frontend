@@ -74,13 +74,6 @@ export const OBSERVACIONES_MAXIMO = 280;
 /** Una campaña con fecha límite a más de un año no es una urgencia. */
 export const DEADLINE_MESES_MAXIMO = 12;
 
-export function validarInstitucion(valor: string): Resultado {
-  if (valor === "") {
-    return { ok: false, error: "Elegí dónde se dona." };
-  }
-  return { ok: true };
-}
-
 /* ============================================================================
    US-02/ST-02 — Validación de los campos opcionales
    ----------------------------------------------------------------------------

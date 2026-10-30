@@ -10,7 +10,9 @@ import type { ValorGrupo } from "./grupos-sanguineos";
    FLUJO (documentado por el backend, 29/10):
    la campaña se crea al pedir la previsualización, no al confirmar. Nace en
    DRAFT, el backend devuelve el slug, y con ese slug el frontend arma el QR
-   real. Confirmar después es PATCH /campaigns/:id/confirm.
+   real. Con las placas ya dibujadas, se suben con POST /campaigns/:id/assets
+   para que queden guardadas con la campaña. Confirmar después es
+   PATCH /campaigns/:id/confirm.
 
    Sin eso, el QR de la previsualización tendría que ser falso: el slug lo
    genera el backend y antes de guardar no existe.
@@ -132,14 +134,108 @@ export async function crearCampania(
   }
 }
 
+/* --------------------------------------------- US-03/ST-04 y US-04/ST-02 */
+
+/** Formatos de placa tal como los nombra el backend (enum `asset_format`). */
+export type FormatoAsset = "SQUARE_1_1" | "STORY_9_16";
+
+export interface PlacaParaSubir {
+  formato: FormatoAsset;
+  imagen: Blob;
+  ancho: number;
+  alto: number;
+}
+
+export interface PlacaGuardada {
+  id: string;
+  formato: FormatoAsset;
+  /** URL pública en Supabase Storage. La van a usar la landing y el panel. */
+  url: string;
+}
+
+/** Blob a data URL (`data:image/png;base64,...`), que el backend acepta tal cual. */
+function aDataUrl(b: Blob): Promise<string> {
+  return new Promise((resolver, rechazar) => {
+    const lector = new FileReader();
+    lector.onload = () => resolver(lector.result as string);
+    lector.onerror = () => rechazar(lector.error);
+    lector.readAsDataURL(b);
+  });
+}
+
+/**
+ * Sube las placas generadas en el navegador para que queden guardadas con la
+ * campaña (POST /campaigns/:id/assets).
+ *
+ * Las placas se dibujan en el navegador porque ahí están las fuentes y el
+ * canvas; el backend solo las guarda. El `editToken` prueba que quien sube es
+ * quien creó la campaña: sin él, cualquiera que conozca el id podría
+ * reemplazarle las imágenes.
+ */
+export async function subirPlacas(
+  campania: CampaniaCreada,
+  placas: PlacaParaSubir[],
+): Promise<Respuesta<PlacaGuardada[]>> {
+  const corte = new AbortController();
+  const reloj = setTimeout(() => corte.abort(), ESPERA_MAXIMA_MS);
+
+  try {
+    const assets = await Promise.all(
+      placas.map(async (p) => ({
+        format: p.formato,
+        imageBase64: await aDataUrl(p.imagen),
+        width: p.ancho,
+        height: p.alto,
+      })),
+    );
+
+    const r = await fetch(`${BASE}/campaigns/${campania.id}/assets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ editToken: campania.editToken, assets }),
+      signal: corte.signal,
+    });
+
+    if (!r.ok) {
+      return {
+        ok: false,
+        error: await mensajeDeError(r, "No encontramos la campaña para guardar las placas."),
+      };
+    }
+
+    const sobre = await r.json();
+    const lista: { id: string; format: FormatoAsset; imageUrl: string }[] =
+      sobre.data ?? [];
+    return {
+      ok: true,
+      datos: lista.map((a) => ({ id: a.id, formato: a.format, url: a.imageUrl })),
+    };
+  } catch (e) {
+    const porTiempo = e instanceof DOMException && e.name === "AbortError";
+    return {
+      ok: false,
+      error: porTiempo
+        ? "El servidor tardó demasiado en guardar las placas."
+        : "No pudimos conectarnos para guardar las placas.",
+    };
+  } finally {
+    clearTimeout(reloj);
+  }
+}
+
 /**
  * Traduce un error del servidor a algo que una persona pueda leer.
  *
  * El backend devuelve mensajes por campo, en castellano y ya redactados para
  * una persona. Cuando están, se usan: dicen qué dato arreglar, que es mucho
  * más útil que un "revisá los datos" genérico.
+ *
+ * @param mensaje404 qué decir si el recurso no existe: depende del pedido.
  */
-async function mensajeDeError(r: Response): Promise<string> {
+async function mensajeDeError(
+  r: Response,
+  mensaje404 = "No encontramos el centro de donación. Avisale al equipo.",
+): Promise<string> {
   let cuerpo: { errors?: Record<string, string[]> } | null = null;
   try {
     cuerpo = await r.json();
@@ -155,8 +251,16 @@ async function mensajeDeError(r: Response): Promise<string> {
   if (r.status === 400 || r.status === 422) {
     return "Alguno de los datos no es válido. Revisalos y probá de nuevo.";
   }
+  if (r.status === 403) {
+    return "No tenés permiso para modificar esta campaña.";
+  }
   if (r.status === 404) {
-    return "No encontramos el centro de donación. Avisale al equipo.";
+    return mensaje404;
+  }
+  if (r.status === 413) {
+    // El cuerpo superó el límite del servidor. NestJS acepta 100 KB por
+    // defecto y dos placas en Base64 pesan unos 450 KB.
+    return "Las imágenes pesan más de lo que acepta el servidor. Avisale al equipo.";
   }
   if (r.status === 409) {
     return "Hubo un conflicto al guardar. Probá de nuevo en unos segundos.";

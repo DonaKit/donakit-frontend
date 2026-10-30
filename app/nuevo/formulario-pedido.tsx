@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "@/lib/icons";
+import { INSTITUCION } from "@/lib/institucion";
 import {
   GRUPOS,
   ETIQUETA_TODOS,
@@ -9,10 +10,21 @@ import {
 } from "@/lib/grupos-sanguineos";
 import {
   validarNombre,
-  validarInstitucion,
   validarGrupo,
+  validarFecha,
+  validarDonantes,
+  validarObservaciones,
   NOMBRE_MAXIMO,
+  DONANTES_MINIMO,
+  DONANTES_MAXIMO,
+  OBSERVACIONES_MAXIMO,
 } from "@/lib/validacion-pedido";
+import {
+  crearCampania,
+  type CampaniaCreada,
+  type DatosPedido,
+} from "@/lib/api";
+import { PlacaGenerada } from "@/components/placa-generada";
 
 /* ============================================================================
    US-01/ST-01 + ST-02 — Formulario del pedido con validación en tiempo real
@@ -20,33 +32,48 @@ import {
    Cuándo se muestra un error, que es la decisión que define si el formulario
    ayuda o molesta:
 
-   - Mientras se escribe por primera vez: NADA. Marcar "campo requerido" apenas
-     alguien entra a un campo vacío es acusarlo de un error que todavía no
-     cometió.
-   - Al salir del campo (blur): se valida y se muestra.
+   - Campo INCOMPLETO (vacío, muy corto): nada mientras escribe. Marcar
+     "requerido" apenas alguien entra a un campo vacío es acusarlo de un error
+     que todavía no cometió. Se muestra al salir del campo.
+   - Campo con FORMATO INVÁLIDO (un número en un nombre): se muestra al
+     instante. Eso ya está mal y no mejora tecleando más.
    - A partir de ahí, en cada tecla: se revalida. El error desaparece en cuanto
      se corrige, sin esperar a salir de nuevo.
    - Al enviar: se marcan todos los campos y se muestran todos los errores.
 
-   Falta US-01/ST-06: la llamada a POST /api/campaigns, que depende del
-   endpoint de backend (US-01/ST-03 a ST-05).
+   US-01/ST-06: al enviar se crea la campaña en estado DRAFT y el backend
+   devuelve el slug. Con ese slug el front arma el QR real de la
+   previsualización. Confirmar, más adelante, solo cambia el estado.
    ========================================================================== */
 
-const INSTITUCIONES_DEMO = [
-  { id: "1", nombre: "Hospital Garrahan", ciudad: "CABA" },
-  { id: "2", nombre: "Hospital Italiano", ciudad: "CABA" },
-  { id: "3", nombre: "Hospital Posadas", ciudad: "El Palomar" },
-];
-
-type Campo = "nombre" | "institucion" | "grupo";
+type Campo = "nombre" | "grupo";
 
 export function FormularioPedido() {
   const [nombre, setNombre] = useState("");
-  const [institucionId, setInstitucionId] = useState("");
   const [grupo, setGrupo] = useState<ValorGrupo | undefined>(undefined);
+
+  // US-02/ST-01 — opcionales. Vacío significa "no lo informaron", y en la base
+  // van como null: la placa tiene una regla distinta para cada ausencia.
+  const [fecha, setFecha] = useState("");
+  const [donantes, setDonantes] = useState("");
+  const [observaciones, setObservaciones] = useState("");
+
+  /* El mínimo del calendario se calcula después del montaje. Si se calculara
+     durante el render, el servidor y el navegador podrían estar en días
+     distintos y React avisaría que el HTML no coincide.
+
+     El reloj del navegador ES un sistema externo a React, y leerlo al montar
+     es exactamente para lo que sirve un efecto. La regla apunta a los efectos
+     que encadenan renders a partir de estado que React ya tiene; acá no hay
+     tal cosa: corre una vez y nunca más. */
+  const [hoy, setHoy] = useState("");
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHoy(new Date().toISOString().slice(0, 10));
+  }, []);
+
   const [tocado, setTocado] = useState<Record<Campo, boolean>>({
     nombre: false,
-    institucion: false,
     grupo: false,
   });
 
@@ -54,25 +81,77 @@ export function FormularioPedido() {
     setTocado((t) => (t[campo] ? t : { ...t, [campo]: true }));
 
   const vNombre = validarNombre(nombre);
-  const vInstitucion = validarInstitucion(institucionId);
   const vGrupo = validarGrupo(grupo);
 
-  // Un error solo se muestra si el campo ya fue tocado.
-  const errNombre = tocado.nombre && !vNombre.ok ? vNombre.error : null;
-  const errInstitucion =
-    tocado.institucion && !vInstitucion.ok ? vInstitucion.error : null;
+  // Un error de campo incompleto espera al blur. Uno de formato se muestra
+  // apenas ocurre: lo que ya está mal no mejora tecleando más.
+  const errNombre = !vNombre.ok && (tocado.nombre || vNombre.inmediato)
+    ? vNombre.error
+    : null;
   const errGrupo = tocado.grupo && !vGrupo.ok ? vGrupo.error : null;
 
   // El aviso de nombre largo no es un error: se muestra apenas aparece.
   const avisoNombre = vNombre.ok ? vNombre.aviso : undefined;
 
-  const valido = vNombre.ok && vInstitucion.ok && vGrupo.ok;
+  // US-02/ST-02 — opcionales. Vacío siempre es válido, así que no hay estado
+  // "incompleto" que esperar: el error, si lo hay, se muestra enseguida.
+  const vFecha = validarFecha(fecha, hoy);
+  const vDonantes = validarDonantes(donantes);
+  const vObservaciones = validarObservaciones(observaciones);
 
-  function enviar(e: React.FormEvent) {
+  const errFecha = vFecha.ok ? null : vFecha.error;
+  const errDonantes = vDonantes.ok ? null : vDonantes.error;
+
+  const avisoDonantes = vDonantes.ok ? vDonantes.aviso : undefined;
+  const avisoObservaciones = vObservaciones.ok
+    ? vObservaciones.aviso
+    : undefined;
+
+  const valido =
+    vNombre.ok &&
+    vGrupo.ok &&
+    vFecha.ok &&
+    vDonantes.ok &&
+    vObservaciones.ok;
+
+  // US-01/ST-06 — estados del envío.
+  const [enviando, setEnviando] = useState(false);
+  const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
+  const [creada, setCreada] = useState<CampaniaCreada | null>(null);
+
+  /* Copia congelada de lo que se envió. La placa se dibuja a partir de esto y
+     no del estado actual: si alguien sigue editando el formulario después de
+     generar, la imagen y el nombre del archivo tienen que seguir diciendo lo
+     que realmente se guardó. */
+  const [enviado, setEnviado] = useState<DatosPedido | null>(null);
+
+  async function enviar(e: React.FormEvent) {
     e.preventDefault();
-    setTocado({ nombre: true, institucion: true, grupo: true });
-    if (!valido) return;
-    // US-01/ST-06: POST /api/campaigns
+    setTocado({ nombre: true, grupo: true });
+    if (!valido || enviando) return;
+
+    setEnviando(true);
+    setErrorEnvio(null);
+
+    const pedido: DatosPedido = {
+      nombre,
+      grupo: grupo ?? null,
+      fecha,
+      donantes,
+      observaciones,
+    };
+
+    const r = await crearCampania(pedido);
+
+    setEnviando(false);
+
+    if (!r.ok) {
+      setErrorEnvio(r.error);
+      return;
+    }
+
+    setEnviado(pedido);
+    setCreada(r.datos);
   }
 
   return (
@@ -116,47 +195,22 @@ export function FormularioPedido() {
       </div>
 
       {/* --------------------------------------------- Centro de salud */}
-      <div className="flex flex-col gap-2">
-        <label
-          htmlFor="institucion"
-          className="text-base font-semibold text-text-primary"
-        >
-          ¿Dónde se dona?
-        </label>
-        <p id="institucion-ayuda" className="text-sm text-text-secondary">
-          El centro donde está internada la persona o donde pidieron los donantes.
-        </p>
-        <div className="relative">
-          <select
-            id="institucion"
-            name="institucion"
-            value={institucionId}
-            onChange={(e) => {
-              setInstitucionId(e.target.value);
-              marcar("institucion");
-            }}
-            onBlur={() => marcar("institucion")}
-            aria-describedby={
-              errInstitucion ? "institucion-error" : "institucion-ayuda"
-            }
-            aria-invalid={errInstitucion ? true : undefined}
-            className={[
-              "h-14 w-full appearance-none rounded-md border bg-surface px-4 pr-12 text-base text-text-primary",
-              errInstitucion ? "border-danger" : "border-border-interactive",
-            ].join(" ")}
-          >
-            <option value="">Elegí un centro de salud</option>
-            {INSTITUCIONES_DEMO.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.nombre} — {i.ciudad}
-              </option>
-            ))}
-          </select>
-          <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-text-secondary">
-            <Icon name="sede" size={20} />
-          </span>
+      {/* No es un campo: el sistema opera para una sola institución. Pero la
+          información queda a la vista, porque quien carga el pedido tiene que
+          saber dónde se va a donar antes de seguir. */}
+      <div className="flex items-start gap-3 rounded-lg bg-surface-muted p-4">
+        <span className="mt-0.5 shrink-0 text-text-secondary">
+          <Icon name="sede" size={20} />
+        </span>
+        <div>
+          <p className="text-sm text-text-secondary">Se dona en</p>
+          <p className="mt-0.5 text-base font-semibold text-text-primary">
+            {INSTITUCION.nombre}
+          </p>
+          <p className="text-sm text-text-secondary">
+            {INSTITUCION.servicio} · {INSTITUCION.ciudad}
+          </p>
         </div>
-        <Mensaje id="institucion-error" error={errInstitucion} />
       </div>
 
       {/* ------------------------------------------- Grupo sanguíneo */}
@@ -199,19 +253,202 @@ export function FormularioPedido() {
         <Mensaje id="grupo-error" error={errGrupo} />
       </fieldset>
 
+      {/* ------------------------------------------ Campos opcionales */}
+      <div className="mt-2 border-t border-border pt-7">
+        <h2 className="text-xl">Datos opcionales</h2>
+        <p className="mt-1 text-sm text-text-secondary">
+          No hacen falta para generar el kit, pero la placa comunica mejor con
+          ellos.
+        </p>
+
+        <div className="mt-6 flex flex-col gap-7">
+          {/* Fecha límite */}
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="fecha"
+              className="text-base font-semibold text-text-primary"
+            >
+              ¿Hasta cuándo se necesita?
+            </label>
+            <p id="fecha-ayuda" className="text-sm text-text-secondary">
+              Si hay una fecha, aparece en las placas: “Donar hasta el 20/11”.
+            </p>
+            <input
+              id="fecha"
+              name="fecha"
+              type="date"
+              value={fecha}
+              min={hoy || undefined}
+              onChange={(e) => setFecha(e.target.value)}
+              aria-describedby={errFecha ? "fecha-error" : "fecha-ayuda"}
+              aria-invalid={errFecha ? true : undefined}
+              className={[
+                "h-14 w-full rounded-md border bg-surface px-4 text-base text-text-primary",
+                errFecha ? "border-danger" : "border-border-interactive",
+              ].join(" ")}
+            />
+            <Mensaje id="fecha-error" error={errFecha} />
+          </div>
+
+          {/* Cantidad de donantes */}
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="donantes"
+              className="text-base font-semibold text-text-primary"
+            >
+              ¿Cuántos donantes se necesitan?
+            </label>
+            <p id="donantes-ayuda" className="text-sm text-text-secondary">
+              Un número concreto moviliza más que un pedido general.
+            </p>
+            <Contador
+              valor={donantes}
+              onChange={setDonantes}
+              describedBy={errDonantes ? "donantes-error" : "donantes-ayuda"}
+              error={Boolean(errDonantes)}
+            />
+            <Mensaje id="donantes-error" error={errDonantes} />
+            {!errDonantes && avisoDonantes && (
+              <p className="text-sm text-text-secondary">{avisoDonantes}</p>
+            )}
+          </div>
+
+          {/* Observaciones */}
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="observaciones"
+              className="text-base font-semibold text-text-primary"
+            >
+              ¿Algo más que deban saber?
+            </label>
+            <p id="observaciones-ayuda" className="text-sm text-text-secondary">
+              Va en la página, no en la placa. Por ejemplo: a qué piso ir, o un
+              horario distinto al habitual.
+            </p>
+            <textarea
+              id="observaciones"
+              name="observaciones"
+              rows={3}
+              value={observaciones}
+              maxLength={OBSERVACIONES_MAXIMO}
+              onChange={(e) => setObservaciones(e.target.value)}
+              aria-describedby="observaciones-ayuda observaciones-restantes"
+              className="w-full resize-none rounded-md border border-border-interactive bg-surface p-4 text-base leading-relaxed text-text-primary placeholder:text-text-muted"
+              placeholder="Preguntar por Hemoterapia en planta baja."
+            />
+            <div className="flex items-start justify-between gap-4">
+              <p className="text-sm text-text-secondary">
+                {avisoObservaciones ?? ""}
+              </p>
+              <p
+                id="observaciones-restantes"
+                className="shrink-0 text-sm text-text-muted"
+              >
+                {OBSERVACIONES_MAXIMO - observaciones.length} caracteres
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* -------------------------------------------------- Acción */}
       <button
         type="submit"
-        className="mt-1 flex h-14 w-full items-center justify-center gap-2.5 rounded-lg bg-surface-brand text-lg font-semibold text-text-on-brand"
+        disabled={enviando}
+        aria-busy={enviando}
+        className="mt-1 flex h-14 w-full items-center justify-center gap-2.5 rounded-lg bg-surface-brand text-lg font-semibold text-text-on-brand disabled:bg-ink-400"
       >
-        Continuar
-        <Icon name="enlace" size={20} />
+        {enviando ? "Generando el kit…" : "Generar el kit"}
+        {!enviando && <Icon name="placa" size={20} />}
       </button>
 
-      <p className="text-center text-sm text-text-secondary">
-        Después vas a poder agregar la fecha límite y otros datos.
-      </p>
+      <Mensaje id="envio-error" error={errorEnvio} />
+
+      {creada && enviado && (
+        <PlacaGenerada campania={creada} pedido={enviado} />
+      )}
     </form>
+  );
+}
+
+/* ----------------------------------------------------------------------------
+   Contador de donantes.
+
+   Por qué no es un <input type="number"> suelto: en el celular las flechitas
+   son diminutas, y en la computadora la rueda del mouse cambia el valor sin
+   querer cuando alguien scrollea con el cursor encima. Los dos problemas son
+   conocidos y los dos arruinan un dato que después va impreso en una placa.
+
+   La solución es el campo acompañado de dos botones de 56 px. Se puede tocar
+   o escribir, y la rueda no lo toca porque el campo es de texto con teclado
+   numérico, no de tipo número.
+-------------------------------------------------------------------------------- */
+function Contador({
+  valor,
+  onChange,
+  describedBy,
+  error = false,
+}: {
+  valor: string;
+  onChange: (v: string) => void;
+  describedBy: string;
+  error?: boolean;
+}) {
+  const n = valor === "" ? 0 : Number(valor);
+
+  const ajustar = (delta: number) => {
+    const siguiente = Math.min(
+      DONANTES_MAXIMO,
+      Math.max(DONANTES_MINIMO, n + delta),
+    );
+    onChange(String(siguiente));
+  };
+
+  const boton =
+    "flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-border-interactive bg-surface text-2xl font-semibold text-text-primary disabled:text-text-muted";
+
+  return (
+    <div className="flex items-center gap-2.5">
+      <button
+        type="button"
+        onClick={() => ajustar(-1)}
+        disabled={valor === "" || n <= DONANTES_MINIMO}
+        aria-label="Un donante menos"
+        className={boton}
+      >
+        −
+      </button>
+
+      <input
+        id="donantes"
+        name="donantes"
+        type="text"
+        inputMode="numeric"
+        value={valor}
+        onChange={(e) => {
+          // Solo dígitos, y nunca más de dos: el máximo es 99.
+          const limpio = e.target.value.replace(/\D/g, "").slice(0, 2);
+          onChange(limpio);
+        }}
+        aria-describedby={describedBy}
+        aria-invalid={error ? true : undefined}
+        placeholder="—"
+        className={[
+          "h-14 min-w-0 flex-1 rounded-md border bg-surface text-center text-lg font-semibold text-text-primary placeholder:font-normal placeholder:text-text-muted",
+          error ? "border-danger" : "border-border-interactive",
+        ].join(" ")}
+      />
+
+      <button
+        type="button"
+        onClick={() => ajustar(1)}
+        disabled={n >= DONANTES_MAXIMO}
+        aria-label="Un donante más"
+        className={boton}
+      >
+        +
+      </button>
+    </div>
   );
 }
 

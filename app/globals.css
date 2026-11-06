@@ -184,3 +184,16 @@
     }
   }
 }
+/* ----------------------------------------------------------------------------
+   Avisos emergentes (components/ui/avisos.tsx)
+   Entran subiendo un poco. Quien pidió menos movimiento en su sistema los ve
+   aparecer sin desplazamiento.
+   -------------------------------------------------------------------------- */
+@keyframes aviso-entrada {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.aviso-entrada { animation: aviso-entrada 180ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .aviso-entrada { animation: none; }
+}

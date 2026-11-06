@@ -197,3 +197,17 @@
 @media (prefers-reduced-motion: reduce) {
   .aviso-entrada { animation: none; }
 }
+
+/* ----------------------------------------------------------------------------
+   Autoevaluación en diapositivas (components/landing/autoevaluacion.tsx)
+   Cada pregunta entra deslizándose un poco desde la derecha: indica que se
+   avanzó. Sin movimiento para quien lo pidió en su sistema.
+   -------------------------------------------------------------------------- */
+@keyframes diapositiva-entrada {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.diapositiva-entrada { animation: diapositiva-entrada 200ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .diapositiva-entrada { animation: none; }
+}

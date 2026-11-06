@@ -29,6 +29,12 @@ import { PreguntasFrecuentes } from "./preguntas-frecuentes";
    Mobile-first: todo es una columna de hasta 560 px. Los botones miden al
    menos 44 px de alto (WCAG 2.5.5) y nada tiene ancho fijo, así entra entero
    en una pantalla de 360 px sin desplazamiento horizontal.
+
+   Textos escritos por personas (observaciones, nombre, datos de la base):
+   llevan `wrap-anywhere` (overflow-wrap: anywhere). Sin eso, una "palabra"
+   larga sin espacios —un enlace pegado, o alguien que dejó apretada una
+   tecla— no se corta, y como la página es una columna flexible, la caja se
+   estira hasta el ancho de esa palabra y la página entera se desborda.
    ========================================================================== */
 
 type Estado =
@@ -87,7 +93,7 @@ export function LandingCampania({ slug }: { slug: string }) {
               <Icon name="info" size={20} />
               Indicaciones de la familia
             </h2>
-            <p className="mt-2 whitespace-pre-line text-base leading-relaxed">{c.observaciones}</p>
+            <p className="mt-2 whitespace-pre-line text-base leading-relaxed wrap-anywhere">{c.observaciones}</p>
           </section>
         )}
 

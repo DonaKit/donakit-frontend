@@ -133,7 +133,7 @@ function Item({ p, abierta, alAlternar }: { p: PreguntaFrecuente; abierta: boole
           onClick={alAlternar}
           className="flex min-h-14 w-full items-center justify-between gap-3 px-4 py-3 text-left text-base font-semibold text-text-primary hover:bg-surface-muted"
         >
-          <span>
+          <span className="min-w-0 wrap-anywhere">
             <span className="block text-xs font-semibold uppercase tracking-wide text-text-muted">{p.categoria}</span>
             {p.pregunta}
           </span>
@@ -144,7 +144,7 @@ function Item({ p, abierta, alAlternar }: { p: PreguntaFrecuente; abierta: boole
           />
         </button>
       </h3>
-      <div id={idRespuesta} hidden={!abierta} className="px-4 pb-4 text-base leading-relaxed text-text-secondary">
+      <div id={idRespuesta} hidden={!abierta} className="px-4 pb-4 text-base leading-relaxed text-text-secondary wrap-anywhere">
         {p.respuesta}
       </div>
     </div>

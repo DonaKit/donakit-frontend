@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icons";
 import { URL_MINISTERIO } from "@/lib/institucion";
 import { nombreCategoria, PARA_EL_DIA, PREGUNTAS_APTITUD, type PreguntaAptitud } from "@/lib/contenido-donante";
@@ -12,11 +12,18 @@ import type { Requisito } from "@/lib/api";
    ----------------------------------------------------------------------------
    En vez de una lista de requisitos para leer, preguntas de sí o no. Es más
    rápido de contestar en el celular, y cada respuesta da una explicación
-   concreta en el momento ("con un tatuaje de menos de un año todavía no se
-   puede donar"), en lugar de dejar a la persona interpretando una lista.
+   concreta ("con un tatuaje de menos de un año todavía no se puede donar"),
+   en lugar de dejar a la persona interpretando una lista.
 
-   Cada pregunta es un grupo de radio nativo (fieldset + legend + inputs), así
-   se navega con teclado y lector de pantalla sin código extra.
+   FORMATO DIAPOSITIVA (pedido del equipo después de probarla): una pregunta
+   por vez. Con las seis apiladas, la sección ocupaba casi tres pantallas en
+   el celular; así ocupa una tarjeta.
+   - Al responder aparece la siguiente; "Anterior" vuelve sin perder lo
+     contestado.
+   - Si una respuesta impide donar, se corta ahí y se explica por qué: no
+     tiene sentido hacer contestar el resto a quien ya sabe que no puede.
+   - Al cambiar de pregunta, el foco va al título de la nueva, para que el
+     lector de pantalla la lea y quien usa teclado no quede perdido.
 
    El resultado nunca dice "sos apto": dice "podés ir a donar" y aclara que la
    decisión final la toma el equipo médico. Prometer más que eso sería
@@ -28,7 +35,9 @@ import type { Requisito } from "@/lib/api";
    is_immediate_disqualification se marcan como excluyentes.
    ========================================================================== */
 
-type Respuestas = Record<string, "si" | "no" | undefined>;
+type Respuesta = "si" | "no";
+type Respuestas = Record<string, Respuesta | undefined>;
+const TOTAL = PREGUNTAS_APTITUD.length;
 
 export function Autoevaluacion({
   requisitos = [],
@@ -38,12 +47,32 @@ export function Autoevaluacion({
   urlRequisitos?: string | null;
 }) {
   const [r, setR] = useState<Respuestas>({});
+  /** Índice de la pregunta visible, o "fin" cuando se muestra el resultado. */
+  const [paso, setPaso] = useState<number | "fin">(0);
+  const titulo = useRef<HTMLHeadingElement>(null);
+  const interactuo = useRef(false);
 
-  const contestadas = PREGUNTAS_APTITUD.filter((p) => r[p.id] !== undefined).length;
-  const total = PREGUNTAS_APTITUD.length;
-  const noAptas = PREGUNTAS_APTITUD.filter((p) => r[p.id] !== undefined && r[p.id] !== p.apta);
-  const impide = noAptas.some((p) => p.impide);
-  const completa = contestadas === total;
+  // Mover el foco al título nuevo, pero solo después de que la persona
+  // interactuó: al cargar la página no se le roba el foco a nadie.
+  useEffect(() => {
+    if (interactuo.current) titulo.current?.focus();
+  }, [paso]);
+
+  function ir(destino: number | "fin") {
+    interactuo.current = true;
+    setPaso(destino);
+  }
+
+  function responder(p: PreguntaAptitud, i: number, v: Respuesta) {
+    setR((x) => ({ ...x, [p.id]: v }));
+    const noApta = v !== p.apta;
+    if ((noApta && p.impide) || i === TOTAL - 1) ir("fin");
+    else ir(i + 1);
+  }
+
+  // La primera respuesta que impide donar, en orden: es el motivo a explicar.
+  const impide = PREGUNTAS_APTITUD.find((p) => r[p.id] !== undefined && r[p.id] !== p.apta && p.impide);
+  const aRevisar = PREGUNTAS_APTITUD.filter((p) => r[p.id] !== undefined && r[p.id] !== p.apta && !p.impide);
 
   return (
     <section aria-labelledby="titulo-requisitos" className="flex flex-col gap-4">
@@ -53,46 +82,63 @@ export function Autoevaluacion({
           ¿Podés donar?
         </h2>
         <p className="mt-1 text-sm text-text-secondary">
-          Contestá estas {total} preguntas: tarda menos de un minuto.
+          {TOTAL} preguntas de sí o no: tarda menos de un minuto.
         </p>
       </div>
 
-      <ol className="flex flex-col gap-3">
-        {PREGUNTAS_APTITUD.map((p, i) => (
-          <li key={p.id}>
-            <Pregunta
-              p={p}
-              numero={i + 1}
-              valor={r[p.id]}
-              alResponder={(v) => setR((x) => ({ ...x, [p.id]: v }))}
-            />
-          </li>
-        ))}
-      </ol>
-
-      {/* Resultado: aparece con la primera respuesta que no permite donar, o
-          al completar todas. aria-live lo anuncia sin mover el foco. */}
-      <div aria-live="polite">
-        {impide ? (
-          <Resultado tono="no" titulo="Por ahora no podrías donar">
-            Revisá el motivo en la pregunta marcada. Igual podés ayudar mucho
-            compartiendo este pedido con alguien que sí pueda.
-          </Resultado>
-        ) : completa && noAptas.length > 0 ? (
-          <Resultado tono="consultar" titulo="Consultá antes de ir">
-            Hay algo para revisar en tus respuestas. Llamá al banco de sangre y
-            contalo antes de sacar turno.
-          </Resultado>
-        ) : completa ? (
-          <Resultado tono="si" titulo="Podés ir a donar">
-            Según lo que contestaste, cumplís los requisitos generales. Antes de
-            donar hay una entrevista médica confidencial: ahí se confirma.
-          </Resultado>
-        ) : contestadas > 0 ? (
-          <p className="text-sm text-text-secondary">
-            {contestadas} de {total} respondidas.
-          </p>
-        ) : null}
+      <div className="overflow-hidden rounded-xl bg-surface ring-1 ring-border">
+        {paso === "fin" ? (
+          <div key="fin" className="diapositiva-entrada flex flex-col gap-4 p-4" aria-live="polite">
+            {impide ? (
+              <Resultado tono="no" titulo="Por ahora no podrías donar" refTitulo={titulo}>
+                {impide.siNoApta} Igual podés ayudar mucho compartiendo este pedido
+                con alguien que sí pueda.
+              </Resultado>
+            ) : aRevisar.length > 0 ? (
+              <Resultado tono="consultar" titulo="Consultá antes de ir" refTitulo={titulo}>
+                {aRevisar.map((p) => p.siNoApta).join(" ")} Llamá al banco de
+                sangre y contalo antes de sacar turno.
+              </Resultado>
+            ) : (
+              <Resultado tono="si" titulo="Podés ir a donar" refTitulo={titulo}>
+                Según lo que contestaste, cumplís los requisitos generales. Antes
+                de donar hay una entrevista médica confidencial: ahí se confirma.
+              </Resultado>
+            )}
+            <div className="grid gap-2 sm:grid-cols-2">
+              {impide && (
+                <button
+                  type="button"
+                  onClick={() => ir(PREGUNTAS_APTITUD.indexOf(impide))}
+                  className="flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-base font-semibold ring-2 ring-border-interactive"
+                >
+                  <Icon name="volver" size={18} />
+                  Cambiar mi respuesta
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setR({});
+                  ir(0);
+                }}
+                className="flex min-h-11 items-center justify-center rounded-lg px-4 text-base font-semibold text-text-secondary hover:text-text-primary"
+              >
+                Empezar de nuevo
+              </button>
+            </div>
+          </div>
+        ) : (
+          <Diapositiva
+            key={paso}
+            p={PREGUNTAS_APTITUD[paso]}
+            indice={paso}
+            valor={r[PREGUNTAS_APTITUD[paso].id]}
+            refTitulo={titulo}
+            alResponder={(v) => responder(PREGUNTAS_APTITUD[paso], paso, v)}
+            alVolver={paso > 0 ? () => ir(paso - 1) : undefined}
+          />
+        )}
       </div>
 
       <div className="rounded-xl bg-surface-muted p-4 ring-1 ring-border">
@@ -124,7 +170,7 @@ export function Autoevaluacion({
                     {nombreCategoria(q.categoria)}
                   </span>
                 </p>
-                <p className="text-sm leading-relaxed text-text-secondary">{q.descripcion}</p>
+                <p className="text-sm leading-relaxed text-text-secondary wrap-anywhere">{q.descripcion}</p>
               </li>
             ))}
           </ul>
@@ -158,68 +204,91 @@ export function Autoevaluacion({
   );
 }
 
-function Pregunta({
+function Diapositiva({
   p,
-  numero,
+  indice,
   valor,
+  refTitulo,
   alResponder,
+  alVolver,
 }: {
   p: PreguntaAptitud;
-  numero: number;
-  valor: "si" | "no" | undefined;
-  alResponder: (v: "si" | "no") => void;
+  indice: number;
+  valor: Respuesta | undefined;
+  refTitulo: React.RefObject<HTMLHeadingElement | null>;
+  alResponder: (v: Respuesta) => void;
+  alVolver?: () => void;
 }) {
-  const noApta = valor !== undefined && valor !== p.apta;
+  const avance = Math.round((indice / TOTAL) * 100);
   return (
-    <fieldset
-      className={`rounded-xl p-4 ring-1 ${noApta ? "bg-red-50 ring-red-200" : "bg-surface ring-border"}`}
-    >
-      <legend className="sr-only">
-        Pregunta {numero}: {p.pregunta}
-      </legend>
-      <p aria-hidden className="text-base font-semibold text-text-primary">
-        {p.pregunta}
-      </p>
-      {p.ayuda && <p className="mt-1 text-sm text-text-secondary">{p.ayuda}</p>}
-      <div className="mt-3 grid grid-cols-2 gap-2">
+    <div className="diapositiva-entrada flex flex-col gap-4 p-4">
+      <div className="flex items-center gap-3">
+        <p className="shrink-0 text-sm font-semibold text-text-secondary">
+          Pregunta {indice + 1} de {TOTAL}
+        </p>
+        <div
+          role="progressbar"
+          aria-label="Avance de la autoevaluación"
+          aria-valuemin={0}
+          aria-valuemax={TOTAL}
+          aria-valuenow={indice}
+          className="h-2 flex-1 overflow-hidden rounded-full bg-ink-200"
+        >
+          <div className="h-full rounded-full bg-surface-brand transition-[width] duration-200" style={{ width: `${avance}%` }} />
+        </div>
+      </div>
+
+      <div className="min-h-[4.5rem]">
+        <h3 ref={refTitulo} tabIndex={-1} className="text-lg font-semibold leading-snug text-text-primary outline-none">
+          {p.pregunta}
+        </h3>
+        {p.ayuda && <p className="mt-1 text-sm text-text-secondary">{p.ayuda}</p>}
+      </div>
+
+      {/* Botones y no radios: cada respuesta es una acción (avanza), no una
+          selección que después se confirma. aria-pressed marca la respuesta
+          anterior cuando se vuelve a una pregunta ya contestada. */}
+      <div className="grid grid-cols-2 gap-2">
         {(["si", "no"] as const).map((v) => (
-          <label
+          <button
             key={v}
-            className={`flex min-h-11 cursor-pointer items-center justify-center rounded-lg text-base font-semibold ring-2 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus ${
+            type="button"
+            aria-pressed={valor === v}
+            onClick={() => alResponder(v)}
+            className={`flex min-h-14 items-center justify-center rounded-lg text-lg font-semibold ring-2 ${
               valor === v
                 ? "bg-surface-brand text-text-on-brand ring-surface-brand"
-                : "bg-surface text-text-primary ring-border"
+                : "bg-surface text-text-primary ring-border-interactive hover:bg-surface-muted"
             }`}
           >
-            <input
-              type="radio"
-              name={`aptitud-${p.id}`}
-              value={v}
-              checked={valor === v}
-              onChange={() => alResponder(v)}
-              className="sr-only"
-            />
             {v === "si" ? "Sí" : "No"}
-          </label>
+          </button>
         ))}
       </div>
-      {noApta && (
-        <p className="mt-3 flex items-start gap-2 text-sm text-danger">
-          <Icon name="alerta" size={16} className="mt-0.5 shrink-0" />
-          {p.siNoApta}
-        </p>
+
+      {alVolver && (
+        <button
+          type="button"
+          onClick={alVolver}
+          className="-mb-1 flex min-h-11 items-center gap-1.5 self-start rounded-lg px-1 text-sm font-semibold text-text-secondary hover:text-text-primary"
+        >
+          <Icon name="volver" size={16} />
+          Anterior
+        </button>
       )}
-    </fieldset>
+    </div>
   );
 }
 
 function Resultado({
   tono,
   titulo,
+  refTitulo,
   children,
 }: {
   tono: "si" | "no" | "consultar";
   titulo: string;
+  refTitulo: React.RefObject<HTMLHeadingElement | null>;
   children: React.ReactNode;
 }) {
   const estilo = {
@@ -229,10 +298,10 @@ function Resultado({
   }[tono];
   return (
     <div className={`rounded-xl p-4 ring-1 ${estilo}`}>
-      <p className="flex items-center gap-2 text-base font-semibold">
+      <h3 ref={refTitulo} tabIndex={-1} className="flex items-center gap-2 text-base font-semibold outline-none">
         <Icon name={tono === "si" ? "apto" : tono === "no" ? "error" : "alerta"} size={20} />
         {titulo}
-      </p>
+      </h3>
       <p className="mt-1 text-sm leading-relaxed text-text-primary">{children}</p>
     </div>
   );

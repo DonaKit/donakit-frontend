@@ -77,7 +77,7 @@ export function Sede({ c, extras }: { c: CampaniaPublica; extras: boolean }) {
         </dl>
 
         {inst.requisitosPropios && (
-          <p className="flex items-start gap-2 rounded-lg bg-info-bg p-3 text-sm leading-relaxed">
+          <p className="flex items-start gap-2 rounded-lg bg-info-bg p-3 text-sm leading-relaxed wrap-anywhere">
             <Icon name="info" size={18} className="mt-0.5 shrink-0" />
             {inst.requisitosPropios}
           </p>

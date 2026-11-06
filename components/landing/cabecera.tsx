@@ -33,7 +33,7 @@ export function Cabecera({ c }: { c: CampaniaPublica }) {
           <Icon name="donacion" size={18} />
           Se necesitan donantes de sangre
         </p>
-        <h1 className="mt-2 text-3xl leading-tight text-text-on-brand">
+        <h1 className="mt-2 text-3xl leading-tight text-text-on-brand wrap-anywhere">
           <span className="block text-base font-normal text-navy-200">Para</span>
           {c.nombre}
         </h1>

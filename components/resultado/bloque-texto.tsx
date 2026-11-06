@@ -58,7 +58,7 @@ export function BloqueTexto({ texto, alCopiar }: Props) {
         </p>
       </div>
 
-      <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-muted p-4 font-sans text-sm leading-relaxed text-text-primary ring-1 ring-border">
+      <pre className="max-h-72 overflow-auto whitespace-pre-wrap wrap-anywhere rounded-lg bg-surface-muted p-4 font-sans text-sm leading-relaxed text-text-primary ring-1 ring-border">
         {texto}
       </pre>
 

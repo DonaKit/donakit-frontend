@@ -20,11 +20,14 @@ import {
   OBSERVACIONES_MAXIMO,
 } from "@/lib/validacion-pedido";
 import {
+  actualizarCampania,
+  cambiaElEnlace,
+  corregibleConPatch,
   crearCampania,
   type CampaniaCreada,
   type DatosPedido,
 } from "@/lib/api";
-import { PlacaGenerada } from "@/components/placa-generada";
+import { Dialogo } from "@/components/ui/dialogo";
 
 /* ============================================================================
    US-01/ST-01 + ST-02 — Formulario del pedido con validación en tiempo real
@@ -44,19 +47,51 @@ import { PlacaGenerada } from "@/components/placa-generada";
    US-01/ST-06: al enviar se crea la campaña en estado DRAFT y el backend
    devuelve el slug. Con ese slug el front arma el QR real de la
    previsualización. Confirmar, más adelante, solo cambia el estado.
+
+   US-10 — Corregir datos: el formulario puede abrirse con los datos del kit
+   ya generado (`inicial`). Si se envía sin cambios, vuelve al kit sin crear
+   nada. Si hubo cambios, primero pide confirmación (ST-01) diciendo qué pasa
+   con el enlace, y después corrige la MISMA campaña con PATCH (ST-03). La
+   excepción es quitar un dato opcional, que el PATCH todavía no permite: ahí
+   se crea una campaña nueva (ver corregibleConPatch en lib/api.ts).
    ========================================================================== */
 
 type Campo = "nombre" | "grupo";
 
-export function FormularioPedido() {
-  const [nombre, setNombre] = useState("");
-  const [grupo, setGrupo] = useState<ValorGrupo | undefined>(undefined);
+interface Props {
+  /** Datos con los que arranca el formulario (US-10/ST-02: corregir). */
+  inicial?: DatosPedido;
+  /** La campaña que se está corrigiendo (US-10/ST-03: se corrige con PATCH). */
+  anterior?: CampaniaCreada;
+  /** Se llama cuando el backend creó la campaña. */
+  alCrear: (campania: CampaniaCreada, pedido: DatosPedido) => void;
+  /** Solo en modo corrección: volver al kit sin cambiar nada. */
+  alCancelar?: () => void;
+}
+
+/** ¿Cambió algo respecto del kit anterior? Compara lo que se guarda, no espacios. */
+function mismosDatos(a: DatosPedido, b: DatosPedido): boolean {
+  return (
+    a.nombre.trim() === b.nombre.trim() &&
+    a.grupo === b.grupo &&
+    a.fecha === b.fecha &&
+    a.donantes === b.donantes &&
+    a.observaciones.trim() === b.observaciones.trim()
+  );
+}
+
+export function FormularioPedido({ inicial, anterior, alCrear, alCancelar }: Props) {
+  const corrigiendo = inicial !== undefined;
+  const [nombre, setNombre] = useState(inicial?.nombre ?? "");
+  const [grupo, setGrupo] = useState<ValorGrupo | undefined>(
+    inicial ? inicial.grupo : undefined,
+  );
 
   // US-02/ST-01 — opcionales. Vacío significa "no lo informaron", y en la base
   // van como null: la placa tiene una regla distinta para cada ausencia.
-  const [fecha, setFecha] = useState("");
-  const [donantes, setDonantes] = useState("");
-  const [observaciones, setObservaciones] = useState("");
+  const [fecha, setFecha] = useState(inicial?.fecha ?? "");
+  const [donantes, setDonantes] = useState(inicial?.donantes ?? "");
+  const [observaciones, setObservaciones] = useState(inicial?.observaciones ?? "");
 
   /* El mínimo del calendario se calcula después del montaje. Si se calculara
      durante el render, el servidor y el navegador podrían estar en días
@@ -117,41 +152,60 @@ export function FormularioPedido() {
   // US-01/ST-06 — estados del envío.
   const [enviando, setEnviando] = useState(false);
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
-  const [creada, setCreada] = useState<CampaniaCreada | null>(null);
+  const [confirmando, setConfirmando] = useState(false);
 
-  /* Copia congelada de lo que se envió. La placa se dibuja a partir de esto y
-     no del estado actual: si alguien sigue editando el formulario después de
-     generar, la imagen y el nombre del archivo tienen que seguir diciendo lo
-     que realmente se guardó. */
-  const [enviado, setEnviado] = useState<DatosPedido | null>(null);
+  function pedidoActual(): DatosPedido {
+    return { nombre, grupo: grupo ?? null, fecha, donantes, observaciones };
+  }
 
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
     setTocado({ nombre: true, grupo: true });
     if (!valido || enviando) return;
 
+    if (corrigiendo) {
+      // Sin cambios no hay nada que reemplazar: se vuelve al mismo kit.
+      if (mismosDatos(pedidoActual(), inicial)) {
+        alCancelar?.();
+        return;
+      }
+      setConfirmando(true);
+      return;
+    }
+    await crear();
+  }
+
+  /* Cómo se va a corregir, para decirlo en el modal antes de hacerlo:
+     - "mismo-enlace": PATCH sin cambio de nombre.
+     - "enlace-nuevo": PATCH con cambio de nombre (el backend regenera el slug).
+     - "kit-nuevo":    se quitó un dato opcional, que el PATCH no sabe borrar. */
+  const pedidoNuevo = pedidoActual();
+  const modo: "mismo-enlace" | "enlace-nuevo" | "kit-nuevo" | null =
+    !corrigiendo || !anterior
+      ? null
+      : !corregibleConPatch(inicial, pedidoNuevo)
+        ? "kit-nuevo"
+        : cambiaElEnlace(inicial, pedidoNuevo)
+          ? "enlace-nuevo"
+          : "mismo-enlace";
+
+  async function crear() {
+    setConfirmando(false);
     setEnviando(true);
     setErrorEnvio(null);
 
-    const pedido: DatosPedido = {
-      nombre,
-      grupo: grupo ?? null,
-      fecha,
-      donantes,
-      observaciones,
-    };
-
-    const r = await crearCampania(pedido);
+    const pedido = pedidoActual();
+    const r =
+      anterior && (modo === "mismo-enlace" || modo === "enlace-nuevo")
+        ? await actualizarCampania(anterior, pedido)
+        : await crearCampania(pedido);
 
     setEnviando(false);
-
     if (!r.ok) {
       setErrorEnvio(r.error);
       return;
     }
-
-    setEnviado(pedido);
-    setCreada(r.datos);
+    alCrear(r.datos, pedido);
   }
 
   return (
@@ -358,15 +412,82 @@ export function FormularioPedido() {
         aria-busy={enviando}
         className="mt-1 flex h-14 w-full items-center justify-center gap-2.5 rounded-lg bg-surface-brand text-lg font-semibold text-text-on-brand disabled:bg-ink-400"
       >
-        {enviando ? "Generando el kit…" : "Generar el kit"}
+        {enviando
+          ? "Generando el kit…"
+          : corrigiendo
+            ? "Generar el kit corregido"
+            : "Generar el kit"}
         {!enviando && <Icon name="placa" size={20} />}
       </button>
 
+      {corrigiendo && (
+        <button
+          type="button"
+          onClick={alCancelar}
+          className="-mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-lg text-base font-semibold text-text-secondary hover:text-text-primary"
+        >
+          <Icon name="volver" size={18} />
+          Volver al kit sin cambios
+        </button>
+      )}
+
       <Mensaje id="envio-error" error={errorEnvio} />
 
-      {creada && enviado && (
-        <PlacaGenerada campania={creada} pedido={enviado} />
-      )}
+      {/* US-10/ST-01 — confirmación antes de reemplazar el kit */}
+      <Dialogo
+        abierto={confirmando}
+        alCerrar={() => setConfirmando(false)}
+        titulo={modo === "kit-nuevo" ? "¿Generar un kit nuevo?" : "¿Corregir el kit?"}
+      >
+        <div className="flex flex-col gap-4 pt-2">
+          {modo === "mismo-enlace" && (
+            <p className="text-base leading-relaxed text-text-secondary">
+              Se actualizan los datos y se generan las placas de nuevo. El
+              enlace no cambia: quien ya lo tiene va a ver los datos corregidos.
+            </p>
+          )}
+          {modo === "enlace-nuevo" && (
+            <>
+              <p className="text-base leading-relaxed text-text-secondary">
+                Se actualizan los datos y se generan las placas de nuevo.
+              </p>
+              <p className="rounded-lg bg-warning-bg p-3 text-sm leading-relaxed text-text-primary">
+                Como cambiaste el nombre, el enlace y el QR cambian. Si ya
+                compartiste el kit, mandá el nuevo: el enlace anterior deja de
+                funcionar.
+              </p>
+            </>
+          )}
+          {(modo === "kit-nuevo" || modo === null) && (
+            <>
+              <p className="text-base leading-relaxed text-text-secondary">
+                Como quitaste un dato que estaba cargado, se genera un kit
+                nuevo, con placas y enlace nuevos.
+              </p>
+              <p className="rounded-lg bg-warning-bg p-3 text-sm leading-relaxed text-text-primary">
+                Si ya compartiste el kit anterior, avisá que hay uno nuevo: el
+                enlace viejo va a seguir mostrando los datos sin corregir.
+              </p>
+            </>
+          )}
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => void crear()}
+              className="flex h-12 w-full items-center justify-center rounded-lg bg-surface-brand text-base font-semibold text-text-on-brand"
+            >
+              {modo === "kit-nuevo" || modo === null ? "Sí, generar el kit nuevo" : "Sí, corregir"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmando(false)}
+              className="flex h-12 w-full items-center justify-center rounded-lg text-base font-semibold text-text-primary ring-2 ring-border-interactive"
+            >
+              Seguir editando
+            </button>
+          </div>
+        </div>
+      </Dialogo>
     </form>
   );
 }

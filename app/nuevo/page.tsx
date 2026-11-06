@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Encabezado } from "@/components/marca";
-import { FormularioPedido } from "./formulario-pedido";
+import { FlujoPedido } from "./flujo-pedido";
 
 export const metadata: Metadata = {
   title: "Nuevo pedido",
@@ -22,19 +22,8 @@ export default function PaginaNuevoPedido() {
   return (
     <>
       <Encabezado />
-      <main className="mx-auto w-full max-w-[480px] px-4 pb-16 pt-8">
-      <p className="text-sm font-medium text-text-secondary">
-        Paso 1 de 2
-      </p>
-      <h1 className="mt-2 text-2xl">Pedido de donantes</h1>
-      <p className="mt-2 text-base leading-relaxed text-text-secondary">
-        Con estos datos armamos la página del caso y las placas listas para
-        compartir por WhatsApp.
-      </p>
-
-      <div className="mt-8">
-        <FormularioPedido />
-      </div>
+      <main className="mx-auto w-full max-w-[480px] px-4 pb-24 pt-8">
+        <FlujoPedido />
       </main>
     </>
   );

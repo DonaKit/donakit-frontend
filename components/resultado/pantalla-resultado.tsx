@@ -55,9 +55,14 @@ const A_ASSET: Record<FormatoPlaca, FormatoAsset> = { "1x1": "SQUARE_1_1", "9x16
 type Blobs = Record<FormatoPlaca, Blob | null>;
 type Urls = Record<FormatoPlaca, string | null>;
 
-/* Un guardado por campaña aunque el componente se monte dos veces (en
-   desarrollo React monta los efectos dos veces a propósito). */
+/* Un guardado por versión de la campaña, aunque el componente se monte dos
+   veces (en desarrollo React monta los efectos dos veces a propósito).
+
+   La clave incluye los datos y no solo el id: al corregir con PATCH (US-10)
+   la campaña conserva su id, pero las placas son otras y hay que volver a
+   guardarlas. */
 const guardados = new Map<string, Promise<Respuesta<PlacaGuardada[]>>>();
+const claveDe = (c: CampaniaCreada, p: DatosPedido) => `${c.id}|${c.slug}|${JSON.stringify(p)}`;
 
 interface Props {
   campania: CampaniaCreada;
@@ -132,18 +137,24 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
     const c = blobs["1x1"];
     const v = blobs["9x16"];
     if (!c || !v) return false;
-    let p = guardados.get(campania.id);
+    const clave = claveDe(campania, pedido);
+    let p = guardados.get(clave);
     if (!p) {
       setGuardado("guardando");
-      p = guardarPlacas(campania, [
-        { formato: "SQUARE_1_1", imagen: c, ancho: 1080, alto: 1080 },
-        { formato: "STORY_9_16", imagen: v, ancho: 1080, alto: 1920 },
-      ]);
-      guardados.set(campania.id, p);
+      // Con las placas va el texto para compartir (US-06/ST-02).
+      p = guardarPlacas(
+        campania,
+        [
+          { formato: "SQUARE_1_1", imagen: c, ancho: 1080, alto: 1080 },
+          { formato: "STORY_9_16", imagen: v, ancho: 1080, alto: 1920 },
+        ],
+        texto,
+      );
+      guardados.set(clave, p);
     }
     const r = await p;
     if (!r.ok) {
-      guardados.delete(campania.id); // el próximo intento vuelve a pedir
+      guardados.delete(clave); // el próximo intento vuelve a pedir
       setGuardado("error");
       return false;
     }
@@ -152,10 +163,10 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
   }
 
   /** Guardar (si hace falta) y registrar. Nunca bloquea la descarga. */
-  function registrar(formatos: FormatoPlaca[]) {
+  function registrar(formatos: FormatoPlaca[], opciones: { zip?: boolean } = {}) {
     void (async () => {
       if (await asegurarGuardado()) {
-        await registrarDescarga(campania, formatos.map((f) => A_ASSET[f]));
+        await registrarDescarga(campania, formatos.map((f) => A_ASSET[f]), opciones);
       }
     })();
   }
@@ -206,7 +217,7 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
       <DescargaZip
         nombreZip={nombreArchivo(datos, "1x1").replace(/-1x1\.png$/, "-kit.zip")}
         archivos={archivosZip}
-        alDescargar={() => registrar(["1x1", "9x16"])}
+        alDescargar={() => registrar(["1x1", "9x16"], { zip: true })}
       />
 
       <BloqueTexto texto={texto} alCopiar={() => void asegurarGuardado()} />

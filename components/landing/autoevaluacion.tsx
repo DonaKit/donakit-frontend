@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Icon } from "@/lib/icons";
 import { URL_MINISTERIO } from "@/lib/institucion";
-import { PARA_EL_DIA, PREGUNTAS_APTITUD, type PreguntaAptitud } from "@/lib/contenido-donante";
+import { nombreCategoria, PARA_EL_DIA, PREGUNTAS_APTITUD, type PreguntaAptitud } from "@/lib/contenido-donante";
+import type { Requisito } from "@/lib/api";
 
 /* ============================================================================
    US-14/ST-03 — Autoevaluación interactiva de requisitos
@@ -20,11 +21,22 @@ import { PARA_EL_DIA, PREGUNTAS_APTITUD, type PreguntaAptitud } from "@/lib/cont
    El resultado nunca dice "sos apto": dice "podés ir a donar" y aclara que la
    decisión final la toma el equipo médico. Prometer más que eso sería
    inventar un diagnóstico.
+
+   Debajo van los requisitos que la institución cargó en la base (US-14/ST-02,
+   tabla `requirement`). No reemplazan a las preguntas: la tabla guarda
+   requisitos redactados, no preguntas de sí o no. Los que tienen
+   is_immediate_disqualification se marcan como excluyentes.
    ========================================================================== */
 
 type Respuestas = Record<string, "si" | "no" | undefined>;
 
-export function Autoevaluacion() {
+export function Autoevaluacion({
+  requisitos = [],
+  urlRequisitos = null,
+}: {
+  requisitos?: Requisito[];
+  urlRequisitos?: string | null;
+}) {
   const [r, setR] = useState<Respuestas>({});
 
   const contestadas = PREGUNTAS_APTITUD.filter((p) => r[p.id] !== undefined).length;
@@ -94,6 +106,42 @@ export function Autoevaluacion() {
           ))}
         </ul>
       </div>
+
+      {requisitos.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-base font-semibold">Requisitos del banco de sangre</h3>
+          <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-xl bg-surface ring-1 ring-border">
+            {requisitos.map((q) => (
+              <li key={q.id} className="flex flex-col gap-1 p-4">
+                <p className="flex flex-wrap items-center gap-2 text-base font-semibold">
+                  {q.titulo}
+                  {q.excluyente && (
+                    <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 ring-1 ring-red-200">
+                      Excluyente
+                    </span>
+                  )}
+                  <span className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+                    {nombreCategoria(q.categoria)}
+                  </span>
+                </p>
+                <p className="text-sm leading-relaxed text-text-secondary">{q.descripcion}</p>
+              </li>
+            ))}
+          </ul>
+          {urlRequisitos && (
+            <a
+              href={urlRequisitos}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 self-start text-sm font-semibold underline underline-offset-2"
+            >
+              Ver los requisitos completos del hospital
+              <Icon name="enlaceExterno" size={16} />
+              <span className="sr-only">(se abre en una pestaña nueva)</span>
+            </a>
+          )}
+        </div>
+      )}
 
       {/* US-14/ST-04 */}
       <a

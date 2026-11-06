@@ -32,9 +32,9 @@ export function FlujoPedido() {
   if (estado.paso === "kit") {
     return (
       <PantallaResultado
-        // La key fuerza un componente nuevo por campaña: placas y estado de
-        // guardado no se mezclan entre el kit viejo y el corregido.
-        key={estado.campania.id}
+        // La key fuerza un componente nuevo por versión del kit: al corregir
+        // con PATCH el id es el mismo, pero las placas tienen que rehacerse.
+        key={`${estado.campania.id}|${estado.campania.slug}|${JSON.stringify(estado.pedido)}`}
         campania={estado.campania}
         pedido={estado.pedido}
         alCorregir={() => {
@@ -59,6 +59,7 @@ export function FlujoPedido() {
       <div className="mt-8">
         <FormularioPedido
           inicial={anterior?.pedido}
+          anterior={anterior?.campania}
           alCrear={(campania, pedido) => {
             setEstado({ paso: "kit", campania, pedido });
             irArriba();

@@ -92,9 +92,9 @@ export function LandingCampania({ slug }: { slug: string }) {
         )}
 
         <Sede c={c} extras={extras} />
-        <Autoevaluacion />
-        {extras && <Contacto />}
-        <PreguntasFrecuentes />
+        <Autoevaluacion requisitos={c.requisitos} urlRequisitos={c.institucion?.urlRequisitos ?? null} />
+        <Contacto c={c} extras={extras} />
+        <PreguntasFrecuentes desdeBackend={c.preguntas} />
 
         <footer className="border-t border-border pt-6 text-center text-sm text-text-secondary">
           <p>

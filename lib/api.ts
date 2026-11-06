@@ -192,7 +192,7 @@ function aDataUrl(b: Blob): Promise<string> {
 async function enviarPlacas(
   campania: CampaniaCreada,
   placas: PlacaParaSubir[],
-  registrar: boolean,
+  extra: { recordDownload: boolean; generatedCopy?: string; downloadType?: "ZIP_BUNDLE" },
 ): Promise<Respuesta<PlacaGuardada[]>> {
   const corte = new AbortController();
   const reloj = setTimeout(() => corte.abort(), ESPERA_MAXIMA_MS);
@@ -210,11 +210,7 @@ async function enviarPlacas(
     const r = await fetch(`${BASE}/campaigns/${campania.id}/assets`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        editToken: campania.editToken,
-        assets,
-        recordDownload: registrar,
-      }),
+      body: JSON.stringify({ editToken: campania.editToken, assets, ...extra }),
       signal: corte.signal,
     });
 
@@ -245,21 +241,32 @@ async function enviarPlacas(
   }
 }
 
-/** Guarda las dos placas y confirma la campaña, sin registrar descargas. */
+/**
+ * Guarda las dos placas y confirma la campaña, sin registrar descargas.
+ *
+ * US-06/ST-02: manda también el texto para compartir (`generatedCopy`), así
+ * queda guardado con la campaña y no solo en la pantalla de quien lo armó.
+ */
 export function guardarPlacas(
   campania: CampaniaCreada,
   placas: PlacaParaSubir[],
+  texto?: string,
 ): Promise<Respuesta<PlacaGuardada[]>> {
-  return enviarPlacas(campania, placas, false);
+  return enviarPlacas(campania, placas, { recordDownload: false, generatedCopy: texto });
 }
 
 /**
  * Registra en `download_log` la descarga de los formatos indicados. Va sin
  * imagen: el backend usa la que ya guardó `guardarPlacas`.
+ *
+ * US-08/ST-03: el ZIP se registra como UNA descarga de tipo ZIP_BUNDLE, no
+ * como dos descargas sueltas: para las métricas, bajar el kit completo es un
+ * evento distinto de bajar una placa.
  */
 export function registrarDescarga(
   campania: CampaniaCreada,
   formatos: FormatoAsset[],
+  opciones: { zip?: boolean } = {},
 ): Promise<Respuesta<PlacaGuardada[]>> {
   const medidas: Record<FormatoAsset, [number, number]> = {
     SQUARE_1_1: [1080, 1080],
@@ -268,8 +275,83 @@ export function registrarDescarga(
   return enviarPlacas(
     campania,
     formatos.map((f) => ({ formato: f, ancho: medidas[f][0], alto: medidas[f][1] })),
-    true,
+    { recordDownload: true, ...(opciones.zip ? { downloadType: "ZIP_BUNDLE" as const } : {}) },
   );
+}
+
+/* ------------------------------------------------- US-10 — Corregir datos */
+
+/**
+ * ¿Se puede corregir con PATCH, o hace falta una campaña nueva?
+ *
+ * El PATCH del backend hoy NO permite borrar un dato opcional: si se manda
+ * vacío o null, lo ignora y la base se queda con el valor viejo. Entonces, si
+ * la corrección consiste en QUITAR la fecha, la cantidad o las observaciones,
+ * el PATCH dejaría la landing mostrando un dato que la persona sacó. En ese
+ * caso se crea una campaña nueva, como antes.
+ * PENDIENTE (backend): aceptar null en UpdateCampaignDto para limpiar campos.
+ */
+export function corregibleConPatch(anterior: DatosPedido, nuevo: DatosPedido): boolean {
+  const quitado = (a: string, b: string) => a.trim() !== "" && b.trim() === "";
+  return !(
+    quitado(anterior.fecha, nuevo.fecha) ||
+    quitado(anterior.donantes, nuevo.donantes) ||
+    quitado(anterior.observaciones, nuevo.observaciones)
+  );
+}
+
+/** Si el nombre cambia, el backend genera un slug nuevo: el enlace cambia. */
+export function cambiaElEnlace(anterior: DatosPedido, nuevo: DatosPedido): boolean {
+  return anterior.nombre.trim() !== nuevo.nombre.trim();
+}
+
+/**
+ * PATCH /campaigns/:id — corrige la misma campaña (US-10/ST-03 y ST-04).
+ * Devuelve la campaña con el slug actualizado (cambia si cambió el nombre).
+ */
+export async function actualizarCampania(
+  campania: CampaniaCreada,
+  d: DatosPedido,
+): Promise<Respuesta<CampaniaCreada>> {
+  const corte = new AbortController();
+  const reloj = setTimeout(() => corte.abort(), ESPERA_MAXIMA_MS);
+  try {
+    const r = await fetch(`${BASE}/campaigns/${campania.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      // El texto para compartir no va acá: si cambia el nombre, cambia el
+      // slug y con él el enlace del texto. Se manda después, junto con las
+      // placas, cuando ya se conoce el enlace definitivo.
+      body: JSON.stringify({ editToken: campania.editToken, ...aCuerpoDePeticion(d) }),
+      signal: corte.signal,
+    });
+    if (!r.ok) {
+      return { ok: false, error: await mensajeDeError(r, "No encontramos la campaña para corregirla.") };
+    }
+    const c = (await r.json()).data;
+    return {
+      ok: true,
+      datos: {
+        id: c.id ?? campania.id,
+        slug: c.slug ?? campania.slug,
+        editToken: c.editToken ?? campania.editToken,
+        // El texto guardado es el de ANTES de corregir (nombre y enlace
+        // viejos). El backend no lo genera, solo guarda el que le manda el
+        // frontend, así que se arma de nuevo con los datos corregidos.
+        textoGenerado: null,
+      },
+    };
+  } catch (e) {
+    const porTiempo = e instanceof DOMException && e.name === "AbortError";
+    return {
+      ok: false,
+      error: porTiempo
+        ? "El servidor tardó demasiado. Revisá tu conexión y probá de nuevo."
+        : "No pudimos conectarnos. Revisá tu conexión y probá de nuevo.",
+    };
+  } finally {
+    clearTimeout(reloj);
+  }
 }
 
 /* ------------------------------------------------ US-12/US-13 — Landing */
@@ -289,8 +371,67 @@ export interface CampaniaPublica {
   fecha: string | null;
   observaciones: string | null;
   estado: EstadoCampania;
-  institucion: { nombre: string; direccion: string; ciudad: string } | null;
+  textoGenerado: string | null;
+  institucion: InstitucionPublica | null;
   placas: { formato: FormatoAsset; url: string }[];
+  /** Requisitos de la institución (tabla `requirement`). Vacío si no hay. */
+  requisitos: Requisito[];
+  /** Preguntas frecuentes (tabla `faq_item`). Vacío si no hay. */
+  preguntas: PreguntaBackend[];
+}
+
+/** Datos de la institución que devuelve la landing (US-16/ST-02, US-17/ST-02). */
+export interface InstitucionPublica {
+  nombre: string;
+  direccion: string;
+  ciudad: string;
+  telefono: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  web: string | null;
+  urlRequisitos: string | null;
+  /** Texto ya armado a partir de `business_hours` (JSON libre en la base). */
+  horario: string | null;
+  requisitosPropios: string | null;
+}
+
+export interface Requisito {
+  id: string;
+  titulo: string;
+  descripcion: string;
+  /** `is_immediate_disqualification`: si no se cumple, no se puede donar. */
+  excluyente: boolean;
+  categoria: string;
+}
+
+export interface PreguntaBackend {
+  id: string;
+  pregunta: string;
+  respuesta: string;
+  categoria: string;
+}
+
+/**
+ * `business_hours` es JSON libre. Hoy tiene la forma
+ * { "dias": "Lunes a Viernes", "horario": "07:00 a 18:00", "sabados": "..." },
+ * pero nada lo garantiza: se arma el texto con lo que haya y, si la forma es
+ * otra, no se muestra horario antes que mostrar algo roto.
+ */
+function horarioLegible(h: unknown): string | null {
+  if (!h || typeof h !== "object") return typeof h === "string" && h.trim() ? h.trim() : null;
+  const o = h as Record<string, unknown>;
+  const partes: string[] = [];
+  if (typeof o.dias === "string" && typeof o.horario === "string") {
+    partes.push(`${o.dias}, ${o.horario}`);
+  } else if (typeof o.horario === "string") {
+    partes.push(o.horario);
+  }
+  if (typeof o.sabados === "string" && o.sabados.trim()) partes.push(`Sábados, ${o.sabados}`);
+  return partes.length ? partes.join(" · ") : null;
+}
+
+function texto(v: unknown): string | null {
+  return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
 }
 
 /**
@@ -325,13 +466,42 @@ export async function obtenerCampania(
         fecha: c.deadline ? String(c.deadline).slice(0, 10) : null,
         observaciones: c.observations ?? null,
         estado: c.status,
+        textoGenerado: texto(c.generatedCopy),
         institucion: c.institution
-          ? { nombre: c.institution.name, direccion: c.institution.address, ciudad: c.institution.city }
+          ? {
+              nombre: c.institution.name,
+              direccion: c.institution.address,
+              ciudad: c.institution.city,
+              telefono: texto(c.institution.phone),
+              whatsapp: texto(c.institution.whatsapp),
+              email: texto(c.institution.email),
+              web: texto(c.institution.websiteUrl),
+              urlRequisitos: texto(c.institution.requirementsUrl),
+              horario: horarioLegible(c.institution.businessHours),
+              requisitosPropios: texto(c.institution.specificRequirements),
+            }
           : null,
         placas: (c.assets ?? []).map((a: { format: FormatoAsset; imageUrl: string }) => ({
           formato: a.format,
           url: a.imageUrl,
         })),
+        requisitos: (c.requirements ?? []).map(
+          (q: { id: string; title: string; description: string; isImmediateDisqualification: boolean; category: string }) => ({
+            id: q.id,
+            titulo: q.title,
+            descripcion: q.description,
+            excluyente: Boolean(q.isImmediateDisqualification),
+            categoria: q.category,
+          }),
+        ),
+        preguntas: (c.faqs ?? []).map(
+          (f: { id: string; question: string; answer: string; category: string }) => ({
+            id: f.id,
+            pregunta: f.question,
+            respuesta: f.answer,
+            categoria: f.category,
+          }),
+        ),
       },
     };
   } catch (e) {

@@ -20,6 +20,9 @@ import {
   OBSERVACIONES_MAXIMO,
 } from "@/lib/validacion-pedido";
 import {
+  actualizarCampania,
+  cambiaElEnlace,
+  corregibleConPatch,
   crearCampania,
   type CampaniaCreada,
   type DatosPedido,
@@ -47,8 +50,10 @@ import { Dialogo } from "@/components/ui/dialogo";
 
    US-10 — Corregir datos: el formulario puede abrirse con los datos del kit
    ya generado (`inicial`). Si se envía sin cambios, vuelve al kit sin crear
-   nada. Si hubo cambios, primero pide confirmación (ST-01): las placas y el
-   enlace se reemplazan.
+   nada. Si hubo cambios, primero pide confirmación (ST-01) diciendo qué pasa
+   con el enlace, y después corrige la MISMA campaña con PATCH (ST-03). La
+   excepción es quitar un dato opcional, que el PATCH todavía no permite: ahí
+   se crea una campaña nueva (ver corregibleConPatch en lib/api.ts).
    ========================================================================== */
 
 type Campo = "nombre" | "grupo";
@@ -56,6 +61,8 @@ type Campo = "nombre" | "grupo";
 interface Props {
   /** Datos con los que arranca el formulario (US-10/ST-02: corregir). */
   inicial?: DatosPedido;
+  /** La campaña que se está corrigiendo (US-10/ST-03: se corrige con PATCH). */
+  anterior?: CampaniaCreada;
   /** Se llama cuando el backend creó la campaña. */
   alCrear: (campania: CampaniaCreada, pedido: DatosPedido) => void;
   /** Solo en modo corrección: volver al kit sin cambiar nada. */
@@ -73,7 +80,7 @@ function mismosDatos(a: DatosPedido, b: DatosPedido): boolean {
   );
 }
 
-export function FormularioPedido({ inicial, alCrear, alCancelar }: Props) {
+export function FormularioPedido({ inicial, anterior, alCrear, alCancelar }: Props) {
   const corrigiendo = inicial !== undefined;
   const [nombre, setNombre] = useState(inicial?.nombre ?? "");
   const [grupo, setGrupo] = useState<ValorGrupo | undefined>(
@@ -168,13 +175,30 @@ export function FormularioPedido({ inicial, alCrear, alCancelar }: Props) {
     await crear();
   }
 
+  /* Cómo se va a corregir, para decirlo en el modal antes de hacerlo:
+     - "mismo-enlace": PATCH sin cambio de nombre.
+     - "enlace-nuevo": PATCH con cambio de nombre (el backend regenera el slug).
+     - "kit-nuevo":    se quitó un dato opcional, que el PATCH no sabe borrar. */
+  const pedidoNuevo = pedidoActual();
+  const modo: "mismo-enlace" | "enlace-nuevo" | "kit-nuevo" | null =
+    !corrigiendo || !anterior
+      ? null
+      : !corregibleConPatch(inicial, pedidoNuevo)
+        ? "kit-nuevo"
+        : cambiaElEnlace(inicial, pedidoNuevo)
+          ? "enlace-nuevo"
+          : "mismo-enlace";
+
   async function crear() {
     setConfirmando(false);
     setEnviando(true);
     setErrorEnvio(null);
 
     const pedido = pedidoActual();
-    const r = await crearCampania(pedido);
+    const r =
+      anterior && (modo === "mismo-enlace" || modo === "enlace-nuevo")
+        ? await actualizarCampania(anterior, pedido)
+        : await crearCampania(pedido);
 
     setEnviando(false);
     if (!r.ok) {
@@ -413,24 +437,46 @@ export function FormularioPedido({ inicial, alCrear, alCancelar }: Props) {
       <Dialogo
         abierto={confirmando}
         alCerrar={() => setConfirmando(false)}
-        titulo="¿Reemplazar el kit?"
+        titulo={modo === "kit-nuevo" ? "¿Generar un kit nuevo?" : "¿Corregir el kit?"}
       >
         <div className="flex flex-col gap-4 pt-2">
-          <p className="text-base leading-relaxed text-text-secondary">
-            Se van a generar placas nuevas y un enlace nuevo con los datos
-            corregidos.
-          </p>
-          <p className="rounded-lg bg-warning-bg p-3 text-sm leading-relaxed text-text-primary">
-            Si ya compartiste el kit anterior, avisá que hay uno nuevo: el
-            enlace viejo va a seguir mostrando los datos sin corregir.
-          </p>
+          {modo === "mismo-enlace" && (
+            <p className="text-base leading-relaxed text-text-secondary">
+              Se actualizan los datos y se generan las placas de nuevo. El
+              enlace no cambia: quien ya lo tiene va a ver los datos corregidos.
+            </p>
+          )}
+          {modo === "enlace-nuevo" && (
+            <>
+              <p className="text-base leading-relaxed text-text-secondary">
+                Se actualizan los datos y se generan las placas de nuevo.
+              </p>
+              <p className="rounded-lg bg-warning-bg p-3 text-sm leading-relaxed text-text-primary">
+                Como cambiaste el nombre, el enlace y el QR cambian. Si ya
+                compartiste el kit, mandá el nuevo: el enlace anterior deja de
+                funcionar.
+              </p>
+            </>
+          )}
+          {(modo === "kit-nuevo" || modo === null) && (
+            <>
+              <p className="text-base leading-relaxed text-text-secondary">
+                Como quitaste un dato que estaba cargado, se genera un kit
+                nuevo, con placas y enlace nuevos.
+              </p>
+              <p className="rounded-lg bg-warning-bg p-3 text-sm leading-relaxed text-text-primary">
+                Si ya compartiste el kit anterior, avisá que hay uno nuevo: el
+                enlace viejo va a seguir mostrando los datos sin corregir.
+              </p>
+            </>
+          )}
           <div className="flex flex-col gap-2">
             <button
               type="button"
               onClick={() => void crear()}
               className="flex h-12 w-full items-center justify-center rounded-lg bg-surface-brand text-base font-semibold text-text-on-brand"
             >
-              Sí, generar el kit corregido
+              {modo === "kit-nuevo" || modo === null ? "Sí, generar el kit nuevo" : "Sí, corregir"}
             </button>
             <button
               type="button"

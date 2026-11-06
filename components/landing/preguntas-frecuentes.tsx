@@ -2,7 +2,8 @@
 
 import { useId, useMemo, useState } from "react";
 import { Icon } from "@/lib/icons";
-import { PREGUNTAS_FRECUENTES, type PreguntaFrecuente } from "@/lib/contenido-donante";
+import { nombreCategoria, PREGUNTAS_FRECUENTES, type PreguntaFrecuente } from "@/lib/contenido-donante";
+import type { PreguntaBackend } from "@/lib/api";
 
 /* ============================================================================
    US-15/ST-03 — Acordeón accesible de preguntas frecuentes
@@ -21,6 +22,9 @@ import { PREGUNTAS_FRECUENTES, type PreguntaFrecuente } from "@/lib/contenido-do
    - cada palabra por separado: "turno tatuaje" muestra lo que tenga las dos.
    Mientras hay búsqueda, las coincidencias se muestran abiertas, porque si la
    palabra está en la respuesta es la respuesta lo que se quiere ver.
+
+   Las preguntas salen del backend (US-15/ST-02, tabla `faq_item`). Si la
+   campaña no trae ninguna, se usan las generales de lib/contenido-donante.ts.
    ========================================================================== */
 
 /** "Sí, AYÚNAS" -> "si, ayunas": sin tildes y en minúscula. */
@@ -42,7 +46,14 @@ function coincide(texto: string, consulta: string) {
     .every((palabra) => t.includes(raiz(palabra)));
 }
 
-export function PreguntasFrecuentes() {
+export function PreguntasFrecuentes({ desdeBackend = [] }: { desdeBackend?: PreguntaBackend[] }) {
+  const lista: PreguntaFrecuente[] = useMemo(
+    () =>
+      desdeBackend.length > 0
+        ? desdeBackend.map((p) => ({ ...p, categoria: nombreCategoria(p.categoria) }))
+        : PREGUNTAS_FRECUENTES,
+    [desdeBackend],
+  );
   const [busqueda, setBusqueda] = useState("");
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
   const idBuscador = useId();
@@ -50,10 +61,8 @@ export function PreguntasFrecuentes() {
   const q = normalizar(busqueda.trim());
   const visibles = useMemo(
     () =>
-      q === ""
-        ? PREGUNTAS_FRECUENTES
-        : PREGUNTAS_FRECUENTES.filter((p) => coincide(`${p.pregunta} ${p.respuesta}`, q)),
-    [q],
+      q === "" ? lista : lista.filter((p) => coincide(`${p.pregunta} ${p.respuesta}`, q)),
+    [q, lista],
   );
 
   function alternar(id: string) {
@@ -90,7 +99,7 @@ export function PreguntasFrecuentes() {
         </div>
         <p id={`${idBuscador}-resultados`} aria-live="polite" className="mt-2 text-sm text-text-secondary">
           {q === ""
-            ? `${PREGUNTAS_FRECUENTES.length} preguntas`
+            ? `${lista.length} preguntas`
             : visibles.length === 0
               ? "No encontramos esa palabra. Probá con otra o llamá al banco de sangre."
               : `${visibles.length} ${visibles.length === 1 ? "resultado" : "resultados"}`}

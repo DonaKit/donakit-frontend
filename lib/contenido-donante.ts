@@ -96,9 +96,26 @@ export const PARA_EL_DIA = [
 
 /* ------------------------------------------------------------- US-15 */
 
+/** Categorías del backend ("ESTILO_DE_VIDA") a texto ("Estilo de vida"). */
+const CATEGORIAS: Record<string, string> = {
+  GENERAL: "General",
+  HABITOS: "Hábitos",
+  SALUD: "Salud",
+  TATUAJES: "Tatuajes",
+  MEDICACION: "Medicación",
+  HEPATITIS: "Hepatitis",
+  INTERVENCIONES: "Intervenciones",
+  ESTILO_DE_VIDA: "Estilo de vida",
+};
+export function nombreCategoria(c: string): string {
+  if (CATEGORIAS[c]) return CATEGORIAS[c];
+  const t = c.replace(/_/g, " ").toLowerCase();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 export interface PreguntaFrecuente {
   id: string;
-  categoria: "Antes" | "Durante" | "Después" | "Turno y sede";
+  categoria: string;
   pregunta: string;
   respuesta: string;
 }

@@ -483,13 +483,13 @@ export function PanelCampanias() {
 
                     {/* Acciones Rápidas */}
                     <div className="flex items-center gap-2 border-t border-border pt-3 sm:border-t-0 sm:pt-0">
-                      {/* Ver Landing Pública */}
+                      {/* Ver Landing Pública (modo vista previa para no sumar a las métricas) */}
                       <Link
-                        href={`/c/${encodeURIComponent(c.slug)}`}
+                        href={`/c/${encodeURIComponent(c.slug)}?preview=true`}
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:bg-ink-50 transition-colors"
-                        title="Ver landing pública del pedido"
+                        title="Ver landing pública del pedido (modo vista previa, no suma visitas)"
                       >
                         <Icon name="enlaceExterno" size={14} />
                         <span className="hidden sm:inline">Landing</span>

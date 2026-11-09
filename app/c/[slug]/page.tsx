@@ -31,15 +31,33 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function PaginaCampania({ params }: PageProps<"/c/[slug]">) {
+export default function PaginaCampania({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ preview?: string; from?: string }>;
+}) {
   return (
     <Suspense fallback={<CargandoPedido />}>
-      <Contenido params={params} />
+      <Contenido params={params} searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function Contenido({ params }: { params: PageProps<"/c/[slug]">["params"] }) {
+async function Contenido({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ preview?: string; from?: string }>;
+}) {
   const { slug } = await params;
-  return <LandingCampania slug={slug} />;
+  const query = await searchParams;
+  const esPreview =
+    query?.preview === "true" ||
+    query?.from === "admin" ||
+    query?.from === "dashboard";
+
+  return <LandingCampania slug={slug} esPreview={esPreview} />;
 }

@@ -441,11 +441,16 @@ function texto(v: unknown): string | null {
  */
 export async function obtenerCampania(
   slug: string,
+  opciones?: { preview?: boolean },
 ): Promise<Respuesta<CampaniaPublica | null>> {
   const corte = new AbortController();
   const reloj = setTimeout(() => corte.abort(), ESPERA_MAXIMA_MS);
   try {
-    const r = await fetch(`${BASE}/campaigns/${encodeURIComponent(slug)}`, {
+    const url = opciones?.preview
+      ? `${BASE}/campaigns/${encodeURIComponent(slug)}?preview=true`
+      : `${BASE}/campaigns/${encodeURIComponent(slug)}`;
+
+    const r = await fetch(url, {
       signal: corte.signal,
     });
     if (r.status === 404) return { ok: true, datos: null };

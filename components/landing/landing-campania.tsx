@@ -43,7 +43,13 @@ type Estado =
   | { tipo: "error"; mensaje: string }
   | { tipo: "ok"; c: CampaniaPublica };
 
-export function LandingCampania({ slug }: { slug: string }) {
+export function LandingCampania({
+  slug,
+  esPreview = false,
+}: {
+  slug: string;
+  esPreview?: boolean;
+}) {
   const [estado, setEstado] = useState<Estado>({ tipo: "cargando" });
   const [demora, setDemora] = useState(false);
   // Número del último pedido hecho. Si llegan dos respuestas desordenadas
@@ -57,13 +63,13 @@ export function LandingCampania({ slug }: { slug: string }) {
     setDemora(false);
     // Si tarda más de 5 s, casi seguro es el backend despertándose en Render.
     const aviso = setTimeout(() => setDemora(true), 5000);
-    const r = await obtenerCampania(slug);
+    const r = await obtenerCampania(slug, { preview: esPreview });
     clearTimeout(aviso);
     if (este !== ultimo.current) return;
     if (!r.ok) setEstado({ tipo: "error", mensaje: r.error });
     else if (r.datos === null) setEstado({ tipo: "no-existe" });
     else setEstado({ tipo: "ok", c: r.datos });
-  }, [slug]);
+  }, [slug, esPreview]);
 
   useEffect(() => {
     // Pedir datos a un sistema externo al montar es para lo que sirve un
@@ -83,6 +89,21 @@ export function LandingCampania({ slug }: { slug: string }) {
 
   return (
     <>
+      {esPreview && (
+        <aside
+          role="status"
+          aria-label="Aviso de vista previa"
+          className="sticky top-0 z-50 flex items-center justify-between border-b border-navy-700 bg-navy-900 px-4 py-2.5 text-xs text-white shadow-sm"
+        >
+          <span className="flex items-center gap-2 font-medium">
+            <Icon name="visitas" size={15} className="text-navy-300" />
+            <span>Vista previa de administración · Esta visita no suma a las métricas</span>
+          </span>
+          <span className="rounded bg-navy-700 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-navy-200">
+            Dashboard
+          </span>
+        </aside>
+      )}
       <Cabecera c={c} />
       <main className="mx-auto flex w-full max-w-[560px] flex-col gap-10 px-4 pb-16 pt-6">
         <EstadoPedido c={c} />

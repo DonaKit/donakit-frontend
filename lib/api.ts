@@ -441,11 +441,16 @@ function texto(v: unknown): string | null {
  */
 export async function obtenerCampania(
   slug: string,
+  opciones?: { preview?: boolean },
 ): Promise<Respuesta<CampaniaPublica | null>> {
   const corte = new AbortController();
   const reloj = setTimeout(() => corte.abort(), ESPERA_MAXIMA_MS);
   try {
-    const r = await fetch(`${BASE}/campaigns/${encodeURIComponent(slug)}`, {
+    const url = opciones?.preview
+      ? `${BASE}/campaigns/${encodeURIComponent(slug)}?preview=true`
+      : `${BASE}/campaigns/${encodeURIComponent(slug)}`;
+
+    const r = await fetch(url, {
       signal: corte.signal,
     });
     if (r.status === 404) return { ok: true, datos: null };
@@ -563,4 +568,183 @@ async function mensajeDeError(
     return "El servidor tuvo un problema. Probá de nuevo en unos minutos.";
   }
   return "No pudimos guardar el pedido. Probá de nuevo.";
+}
+
+/* ------------------------------------------------------------- US-19 / US-20 */
+
+export interface CampaniaDashboard {
+  id: string;
+  slug: string;
+  patientName: string;
+  bloodType: string;
+  donationType: string | null;
+  status: EstadoCampania;
+  createdAt: string;
+  deadline: string | null;
+  targetDonors: number | null;
+  currentDonors: number;
+  progressPercentage: number | null;
+  totalVisits: number;
+  institution?: {
+    id: string;
+    name: string;
+    city: string;
+  } | null;
+}
+
+export interface FiltrosDashboard {
+  status?: string;
+  institutionId?: string;
+}
+
+/**
+ * GET /campaigns?status=...&institutionId=...
+ * Obtiene el listado de campañas con sus métricas acumuladas (visitas, donantes, avance).
+ */
+export async function obtenerCampaniasDashboard(
+  filtros?: FiltrosDashboard,
+): Promise<Respuesta<{ campanias: CampaniaDashboard[]; total: number }>> {
+  const corte = new AbortController();
+  const reloj = setTimeout(() => corte.abort(), ESPERA_MAXIMA_MS);
+
+  try {
+    const params = new URLSearchParams();
+    if (filtros?.status) params.set("status", filtros.status);
+    if (filtros?.institutionId) params.set("institutionId", filtros.institutionId);
+
+    const query = params.toString() ? `?${params.toString()}` : "";
+    const r = await fetch(`${BASE}/campaigns${query}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      signal: corte.signal,
+    });
+
+    if (!r.ok) return { ok: false, error: await mensajeDeError(r) };
+
+    const sobre = await r.json();
+    const data: CampaniaDashboard[] = (sobre.data ?? []).map(
+      (c: {
+        id: string;
+        slug: string;
+        patientName: string;
+        bloodType: string;
+        donationType?: string | null;
+        status: EstadoCampania;
+        createdAt: string;
+        deadline?: string | null;
+        targetDonors?: number | null;
+        currentDonors?: number | null;
+        progressPercentage?: number | null;
+        totalVisits?: number;
+        institution?: { id: string; name: string; city: string } | null;
+      }) => ({
+        id: c.id,
+        slug: c.slug,
+        patientName: c.patientName,
+        bloodType: String(c.bloodType ?? "").replace(/^O/, "0"),
+        donationType: c.donationType ?? null,
+        status: c.status,
+        createdAt: c.createdAt,
+        deadline: c.deadline ?? null,
+        targetDonors: c.targetDonors ?? null,
+        currentDonors: c.currentDonors ?? 0,
+        progressPercentage: c.progressPercentage ?? null,
+        totalVisits: c.totalVisits ?? 0,
+        institution: c.institution
+          ? {
+              id: c.institution.id,
+              name: c.institution.name,
+              city: c.institution.city,
+            }
+          : null,
+      }),
+    );
+
+    return {
+      ok: true,
+      datos: {
+        campanias: data,
+        total: sobre.total ?? data.length,
+      },
+    };
+  } catch (e) {
+    const porTiempo = e instanceof DOMException && e.name === "AbortError";
+    return {
+      ok: false,
+      error: porTiempo
+        ? "El servidor tardó demasiado en responder el panel de campañas."
+        : "No pudimos conectar con el servidor para cargar las campañas.",
+    };
+  } finally {
+    clearTimeout(reloj);
+  }
+}
+
+/**
+ * PATCH /institutions/:institutionId/campaigns/:campaignId
+ * Permite modificar o sumar donantes y actualizar el estado de una campaña desde el panel.
+ */
+export async function actualizarCampaniaAdmin(
+  institutionId: string,
+  campaignId: string,
+  cambios: {
+    currentDonors?: number;
+    incrementDonors?: number;
+    status?: EstadoCampania;
+    observations?: string;
+  },
+): Promise<Respuesta<CampaniaDashboard>> {
+  const corte = new AbortController();
+  const reloj = setTimeout(() => corte.abort(), ESPERA_MAXIMA_MS);
+
+  try {
+    const r = await fetch(
+      `${BASE}/institutions/${encodeURIComponent(institutionId)}/campaigns/${encodeURIComponent(campaignId)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cambios),
+        signal: corte.signal,
+      },
+    );
+
+    if (!r.ok) return { ok: false, error: await mensajeDeError(r) };
+
+    const sobre = await r.json();
+    const c = sobre.data;
+    return {
+      ok: true,
+      datos: {
+        id: c.id,
+        slug: c.slug,
+        patientName: c.patientName,
+        bloodType: String(c.bloodType ?? "").replace(/^O/, "0"),
+        donationType: c.donationType ?? null,
+        status: c.status,
+        createdAt: c.createdAt,
+        deadline: c.deadline ?? null,
+        targetDonors: c.targetDonors ?? null,
+        currentDonors: c.currentDonors ?? 0,
+        progressPercentage: c.progressPercentage ?? null,
+        totalVisits: c.totalVisits ?? 0,
+        institution: c.institution
+          ? {
+              id: c.institution.id,
+              name: c.institution.name,
+              city: c.institution.city,
+            }
+          : null,
+      },
+    };
+  } catch (e) {
+    const porTiempo = e instanceof DOMException && e.name === "AbortError";
+    return {
+      ok: false,
+      error: porTiempo
+        ? "El servidor tardó demasiado en actualizar la campaña."
+        : "No pudimos conectar con el servidor para guardar los cambios.",
+    };
+  } finally {
+    clearTimeout(reloj);
+  }
 }

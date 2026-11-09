@@ -11,7 +11,8 @@
   "dependencies": {
     "jszip": "^3.10.1",
     "lucide-react": "^1.58.0",
-    "next": "16.4.0",
+    "next": "^16.4.5",
+    "next-auth": "^5.0.0-beta.32",
     "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0"
@@ -23,7 +24,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.4.0",
+    "eslint-config-next": "^16.4.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

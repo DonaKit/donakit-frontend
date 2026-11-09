@@ -1,5 +1,7 @@
 import QRCode from "qrcode";
 import { INSTITUCION } from "./institucion";
+import { esUrgente, fechaCorta } from "./fechas";
+import { dominioVisible, urlCampania } from "./sitio";
 
 /* ============================================================================
    US-03/ST-03 — Generador de la placa 1:1 en el navegador
@@ -254,11 +256,65 @@ function rectRedondeado(
   ctx.roundRect(x, y, w, h, r);
 }
 
-/** `AAAA-MM-DD` a `DD/MM`, o `DD/MM/AA` si cae en otro año. */
-function formatearFecha(iso: string): string {
-  const [a, m, d] = iso.split("-");
-  const esteAnio = new Date().getFullYear().toString();
-  return a === esteAnio ? `${d}/${m}` : `${d}/${m}/${a.slice(2)}`;
+
+/* ------------------------------------------------------ Etiqueta (US-11) */
+
+/**
+ * Texto de la etiqueta de arriba a la derecha.
+ *
+ * US-11/ST-02: con la fecha límite a 3 días o menos la etiqueta pasa a decir
+ * URGENTE y se pinta roja sólida. Se acorta el resto ("6 DONANTES" en vez de
+ * "SE NECESITAN 6 DONANTES") para que entre al lado del logo en la cuadrada.
+ */
+export function etiquetaPedido(d: Pick<DatosPlaca, "donantes" | "fecha">): {
+  texto: string;
+  urgente: boolean;
+} {
+  const urgente = esUrgente(d.fecha);
+  const n = d.donantes && d.donantes > 0 ? d.donantes : null;
+  if (urgente) {
+    return { urgente, texto: n ? `URGENTE · ${n} DONANTES` : "URGENTE" };
+  }
+  return {
+    urgente,
+    texto: n ? `SE NECESITAN ${n} DONANTES` : "PEDIDO DE DONACIÓN",
+  };
+}
+
+function dibujarEtiqueta(
+  ctx: CanvasRenderingContext2D,
+  d: DatosPlaca,
+  p: {
+    x1: number;
+    centroY: number;
+    texto: number;
+    alto: number;
+    padX: number;
+    gota: number;
+    fuente: string;
+  },
+) {
+  const { texto, urgente } = etiquetaPedido(d);
+  ctx.font = `700 ${p.texto}px ${p.fuente}`;
+  const anchoPill = p.padX * 2 + p.gota * 0.7 + 12 + ctx.measureText(texto).width;
+  const xPill = p.x1 - anchoPill;
+  const yPill = p.centroY - p.alto / 2;
+
+  rectRedondeado(ctx, xPill, yPill, anchoPill, p.alto, p.alto / 2);
+  // Urgente: rojo sólido con texto blanco (6,6:1). Normal: contorno rojo
+  // sobre rosa muy claro, para que no compita con el bloque del grupo.
+  ctx.fillStyle = urgente ? C.rojo : C.rojoSuave;
+  ctx.fill();
+  if (!urgente) {
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = C.rojoBorde;
+    ctx.stroke();
+  }
+
+  const color = urgente ? C.blanco : C.rojo;
+  const anchoGotita = dibujarGota(ctx, xPill + p.padX, yPill + (p.alto - p.gota) / 2, p.gota, color);
+  ctx.fillStyle = color;
+  ctx.fillText(texto, xPill + p.padX + anchoGotita + 12, yPill + p.alto / 2 + p.texto * 0.36);
 }
 
 /* -------------------------------------------------------------- Generador */
@@ -315,36 +371,12 @@ export async function generarPlaca11(d: DatosPlaca): Promise<Blob> {
   ctx.fillText("Kit", xMarca + ctx.measureText("Dona").width, M.logo.base);
 
   // ------------------------------------------------- Etiqueta de pedido
-  const etiqueta =
-    d.donantes && d.donantes > 0
-      ? `SE NECESITAN ${d.donantes} DONANTES`
-      : "PEDIDO DE DONACIÓN";
-  ctx.font = `700 ${M.pill.texto}px ${fTexto}`;
-  const anchoEtq = ctx.measureText(etiqueta).width;
-  const anchoPill = M.pill.padX * 2 + M.pill.gota * 0.7 + 12 + anchoEtq;
-  const xPill = M.x1 - anchoPill;
-  const yPill = M.logo.base - M.logo.texto * 0.5 - M.pill.alto / 2 + 4;
-
-  rectRedondeado(ctx, xPill, yPill, anchoPill, M.pill.alto, M.pill.alto / 2);
-  ctx.fillStyle = C.rojoSuave;
-  ctx.fill();
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = C.rojoBorde;
-  ctx.stroke();
-
-  const anchoGotita = dibujarGota(
-    ctx,
-    xPill + M.pill.padX,
-    yPill + (M.pill.alto - M.pill.gota) / 2,
-    M.pill.gota,
-    C.rojo,
-  );
-  ctx.fillStyle = C.rojo;
-  ctx.fillText(
-    etiqueta,
-    xPill + M.pill.padX + anchoGotita + 12,
-    yPill + M.pill.alto / 2 + M.pill.texto * 0.36,
-  );
+  dibujarEtiqueta(ctx, d, {
+    x1: M.x1,
+    centroY: M.logo.base - M.logo.texto * 0.5 + 4,
+    ...M.pill,
+    fuente: fTexto,
+  });
 
   // ----------------------------------------------------- Grupo y factor
   const g = M.grupo;
@@ -399,7 +431,7 @@ export async function generarPlaca11(d: DatosPlaca): Promise<Blob> {
     },
     {
       icono: ICONOS.sede,
-      texto: `${INSTITUCION.direccion}, ${INSTITUCION.ciudad}`,
+      texto: `${INSTITUCION.entradaDonantes}, ${INSTITUCION.ciudad}`,
       negrita: false,
     },
   ];
@@ -409,7 +441,7 @@ export async function generarPlaca11(d: DatosPlaca): Promise<Blob> {
   if (d.fecha) {
     filas.push({
       icono: ICONOS.fecha,
-      texto: `Donar hasta el ${formatearFecha(d.fecha)}`,
+      texto: `Donar hasta el ${fechaCorta(d.fecha)}`,
       negrita: false,
     });
   }
@@ -465,7 +497,7 @@ export async function generarPlaca11(d: DatosPlaca): Promise<Blob> {
 
   /* El QR va sobre una placa blanca con margen propio: sin zona clara
      alrededor muchas cámaras no lo reconocen. */
-  const url = `https://donakit.app/c/${d.slug}`;
+  const url = urlCampania(d.slug);
   const yQr = M.lienzo - P.qrAbajo - P.qr;
   rectRedondeado(ctx, P.qrX, yQr, P.qr, P.qr, 18);
   ctx.fillStyle = C.blanco;
@@ -482,10 +514,10 @@ export async function generarPlaca11(d: DatosPlaca): Promise<Blob> {
   });
   ctx.drawImage(lienzoQr, P.qrX + P.qrPad, yQr + P.qrPad);
 
-  // "donakit.app" en negrita y el lema en regular, centrados en la franja.
+  // El dominio en negrita y el lema en regular, centrados en la franja.
   const xLema = P.qrX + P.qr + 36;
   const anchoLema = M.lienzo - xLema - 48;
-  const dominio = "donakit.app";
+  const dominio = dominioVisible();
   const lema = "  ·  Doná sangre, salvá vidas";
   let cuerpoLema: number = P.texto;
   const medirLema = () => {
@@ -618,34 +650,12 @@ export async function generarPlaca916(d: DatosPlaca): Promise<Blob> {
   ctx.fillText("Kit", xMarca + ctx.measureText("Dona").width, V.logo.base);
 
   // ------------------------------------------------------------- Etiqueta
-  const etiqueta =
-    d.donantes && d.donantes > 0
-      ? `SE NECESITAN ${d.donantes} DONANTES`
-      : "PEDIDO DE DONACIÓN";
-  ctx.font = `700 ${V.pill.texto}px ${fTexto}`;
-  const anchoPill =
-    V.pill.padX * 2 + V.pill.gota * 0.7 + 12 + ctx.measureText(etiqueta).width;
-  const xPill = V.x1 - anchoPill;
-  const yPill = V.logo.base - V.logo.texto * 0.5 - V.pill.alto / 2 + 4;
-  rectRedondeado(ctx, xPill, yPill, anchoPill, V.pill.alto, V.pill.alto / 2);
-  ctx.fillStyle = C.rojoSuave;
-  ctx.fill();
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = C.rojoBorde;
-  ctx.stroke();
-  const anchoGotita = dibujarGota(
-    ctx,
-    xPill + V.pill.padX,
-    yPill + (V.pill.alto - V.pill.gota) / 2,
-    V.pill.gota,
-    C.rojo,
-  );
-  ctx.fillStyle = C.rojo;
-  ctx.fillText(
-    etiqueta,
-    xPill + V.pill.padX + anchoGotita + 12,
-    yPill + V.pill.alto / 2 + V.pill.texto * 0.36,
-  );
+  dibujarEtiqueta(ctx, d, {
+    x1: V.x1,
+    centroY: V.logo.base - V.logo.texto * 0.5 + 4,
+    ...V.pill,
+    fuente: fTexto,
+  });
 
   // ------------------------------------------------------- Grupo y factor
   const g = V.grupo;
@@ -687,7 +697,7 @@ export async function generarPlaca916(d: DatosPlaca): Promise<Blob> {
     },
     {
       icono: ICONOS.sede,
-      texto: `${INSTITUCION.direccion}, ${INSTITUCION.ciudad}`,
+      texto: `${INSTITUCION.entradaDonantes}, ${INSTITUCION.ciudad}`,
       negrita: false,
     },
   ];
@@ -697,7 +707,7 @@ export async function generarPlaca916(d: DatosPlaca): Promise<Blob> {
   if (d.fecha) {
     filas.push({
       icono: ICONOS.fecha,
-      texto: `Donar hasta el ${formatearFecha(d.fecha)}`,
+      texto: `Donar hasta el ${fechaCorta(d.fecha)}`,
       negrita: false,
     });
   }
@@ -783,7 +793,7 @@ export async function generarPlaca916(d: DatosPlaca): Promise<Blob> {
   ctx.stroke();
 
   const lienzoQr = document.createElement("canvas");
-  await QRCode.toCanvas(lienzoQr, `https://donakit.app/c/${d.slug}`, {
+  await QRCode.toCanvas(lienzoQr, urlCampania(d.slug), {
     margin: 0,
     width: P.qr - P.qrPad * 2,
     color: { dark: C.qrOscuro, light: C.blanco },
@@ -813,7 +823,7 @@ export async function generarPlaca916(d: DatosPlaca): Promise<Blob> {
   ctx.fillStyle = C.franja;
   ctx.fill();
 
-  const dominio = "donakit.app";
+  const dominio = dominioVisible();
   const lema = " · Doná sangre, salvá vidas";
   let cuerpo = 30;
   const medir = () => {
@@ -849,7 +859,7 @@ export function nombreArchivo(d: DatosPlaca, formato: FormatoPlaca = "1x1"): str
   const limpio = d.nombre
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   return `donakit-${limpio || d.slug}-${formato}.png`;

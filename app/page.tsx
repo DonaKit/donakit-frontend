@@ -1,69 +1,86 @@
-import Image from "next/image";
+import Link from "next/link";
+import { Encabezado } from "@/components/marca";
+import { Icon, type IconName } from "@/lib/icons";
 
-export default function Home() {
+/* ============================================================================
+   Portada — ruta /
+   ----------------------------------------------------------------------------
+   Hasta ahora la raíz mostraba la página de ejemplo de Next.js. Ninguna
+   historia de usuario pide una portada, pero es adonde llega quien escribe
+   la dirección a mano y adonde lleva "Ir a DonaKit" cuando un pedido no
+   existe, así que no puede quedar vacía.
+
+   Es deliberadamente mínima: qué es DonaKit, cómo funciona en tres pasos y un
+   solo botón a /nuevo. Quien llega acá viene a armar un pedido; cualquier
+   otra cosa en la pantalla lo demora.
+   ========================================================================== */
+
+const PASOS: { icono: IconName; titulo: string; texto: string }[] = [
+  {
+    icono: "editar",
+    titulo: "Completá los datos",
+    texto: "Nombre del paciente, grupo sanguíneo, cuántos donantes hacen falta y hasta cuándo.",
+  },
+  {
+    icono: "placa",
+    titulo: "Descargá las placas",
+    texto: "Una cuadrada para el feed y una vertical para estados e historias, con el QR al pedido.",
+  },
+  {
+    icono: "compartir",
+    titulo: "Compartilas",
+    texto: "Cada placa lleva a una página con la sede, los requisitos y cómo sacar turno.",
+  },
+];
+
+export default function Portada() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
+    <>
+      <Encabezado />
+      <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-10 px-4 pb-24 pt-10">
+        <section className="flex flex-col gap-4">
+          <h1 className="text-3xl font-bold leading-tight">
+            Conseguí donantes de sangre para tu familiar en minutos
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-lg leading-relaxed text-text-secondary">
+            DonaKit arma el pedido listo para compartir por WhatsApp e
+            Instagram: las placas, el texto y una página con toda la
+            información para quien quiera donar.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          <Link
+            href="/nuevo"
+            className="mt-2 flex h-14 items-center justify-center gap-2 rounded-lg bg-surface-brand px-6 text-lg font-semibold text-text-on-brand"
           >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+            <Icon name="donacion" size={20} />
+            Armar un pedido
+          </Link>
+          <p className="text-center text-sm text-text-secondary">Gratis y sin crear una cuenta.</p>
+        </section>
+
+        <section aria-labelledby="titulo-como-funciona" className="flex flex-col gap-4">
+          <h2 id="titulo-como-funciona" className="text-xl font-semibold">
+            Cómo funciona
+          </h2>
+          <ol className="flex flex-col gap-3">
+            {PASOS.map((p, i) => (
+              <li key={p.titulo} className="flex gap-4 rounded-xl bg-surface p-4 ring-1 ring-border">
+                <span
+                  aria-hidden="true"
+                  className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-muted text-text-primary"
+                >
+                  <Icon name={p.icono} size={20} />
+                </span>
+                <div>
+                  <h3 className="text-base font-semibold">
+                    {i + 1}. {p.titulo}
+                  </h3>
+                  <p className="mt-1 text-sm leading-relaxed text-text-secondary">{p.texto}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
       </main>
-    </div>
+    </>
   );
 }

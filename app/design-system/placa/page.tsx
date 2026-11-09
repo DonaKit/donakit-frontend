@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { generarPlaca11, generarPlaca916, type DatosPlaca } from "@/lib/placa";
+import { PruebaMiniaturas } from "./prueba-miniaturas";
 
 /* ============================================================================
    Página interna — vista previa de las placas 1:1 y 9:16
@@ -15,6 +16,14 @@ import { generarPlaca11, generarPlaca916, type DatosPlaca } from "@/lib/placa";
    los dos formatos de un golpe.
    ========================================================================== */
 
+/* Fechas relativas a hoy: con fechas fijas, qué caso se ve "urgente" cambiaba
+   según el día en que se abriera la página. */
+function enDias(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 const CASOS: { titulo: string; nota: string; datos: DatosPlaca }[] = [
   {
     titulo: "Caso típico",
@@ -23,7 +32,7 @@ const CASOS: { titulo: string; nota: string; datos: DatosPlaca }[] = [
       nombre: "Lucía Fernández",
       grupo: "0+",
       donantes: 6,
-      fecha: "2026-11-20",
+      fecha: enDias(14),
       slug: "donantes-lucia-fernandez-4a21bc",
     },
   },
@@ -34,7 +43,7 @@ const CASOS: { titulo: string; nota: string; datos: DatosPlaca }[] = [
       nombre: "María de los Ángeles Rodríguez Etchebarne",
       grupo: "AB-",
       donantes: 4,
-      fecha: "2026-12-05",
+      fecha: enDias(29),
       slug: "donantes-maria-rodriguez-9f03de",
     },
   },
@@ -45,7 +54,7 @@ const CASOS: { titulo: string; nota: string; datos: DatosPlaca }[] = [
       nombre: "Jorge Peralta",
       grupo: null,
       donantes: 10,
-      fecha: "2026-11-12",
+      fecha: enDias(6),
       slug: "donantes-jorge-peralta-77c1aa",
     },
   },
@@ -61,13 +70,13 @@ const CASOS: { titulo: string; nota: string; datos: DatosPlaca }[] = [
     },
   },
   {
-    titulo: "Un solo nombre",
-    nota: "El mínimo que acepta la validación.",
+    titulo: "Urgente · un solo nombre",
+    nota: "Vence en 2 días: la etiqueta pasa a URGENTE en rojo sólido (US-11/ST-02). Y el nombre más corto que acepta la validación.",
     datos: {
       nombre: "Ruiz",
       grupo: "A-",
       donantes: 2,
-      fecha: "2026-11-08",
+      fecha: enDias(2),
       slug: "donantes-ruiz-c40982",
     },
   },
@@ -78,11 +87,15 @@ const CASOS: { titulo: string; nota: string; datos: DatosPlaca }[] = [
       nombre: "Centro de Hemoterapia",
       grupo: "0-",
       donantes: 25,
-      fecha: "2027-01-15",
+      fecha: enDias(70),
       slug: "colecta-hemoterapia-ab3310",
     },
   },
 ];
+
+/* Para la prueba de miniaturas: el caso típico y el urgente. Constante de
+   módulo para que la referencia no cambie en cada render. */
+const MINIATURAS = [CASOS[0], CASOS[4]];
 
 type Generador = (d: DatosPlaca) => Promise<Blob>;
 
@@ -214,6 +227,7 @@ export default function PaginaPlaca() {
           alto={1920}
           columnas="grid-cols-2 lg:grid-cols-3"
         />
+        <PruebaMiniaturas casos={MINIATURAS} />
       </div>
     </main>
   );

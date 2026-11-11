@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import { isAdminEmail } from "@/lib/admin-auth";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [Google],
@@ -9,16 +10,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   callbacks: {
     signIn({ user }) {
-      if (!user.email) {
-        return false;
-      }
-
-      const adminEmails = (process.env.ADMIN_EMAILS || "")
-        .split(",")
-        .map((email) => email.trim().toLowerCase())
-        .filter(Boolean);
-
-      return adminEmails.includes(user.email.trim().toLowerCase());
+      return isAdminEmail(user.email);
     },
   },
 });

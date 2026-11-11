@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icons";
 import {
   obtenerCampaniasDashboard,
@@ -47,6 +48,7 @@ const ETIQUETAS_ESTADO: Record<EstadoCampania, { texto: string; clases: string }
 };
 
 export function PanelCampanias() {
+  const router = useRouter();
   const [campanias, setCampanias] = useState<CampaniaDashboard[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,11 +70,14 @@ export function PanelCampanias() {
     });
     if (res.ok) {
       setCampanias(res.datos.campanias);
+    } else if (res.requiereLogin) {
+      router.replace("/login");
+      return;
     } else {
       setError(res.error);
     }
     setCargando(false);
-  }, [estadoSeleccionado]);
+  }, [estadoSeleccionado, router]);
 
   useEffect(() => {
     let montado = true;
@@ -83,6 +88,9 @@ export function PanelCampanias() {
       if (!montado) return;
       if (res.ok) {
         setCampanias(res.datos.campanias);
+      } else if (res.requiereLogin) {
+        router.replace("/login");
+        return;
       } else {
         setError(res.error);
       }
@@ -92,7 +100,7 @@ export function PanelCampanias() {
     return () => {
       montado = false;
     };
-  }, [estadoSeleccionado]);
+  }, [estadoSeleccionado, router]);
 
   // Manejo de +1 Donante
   async function handleSumarDonante(c: CampaniaDashboard) {
@@ -108,6 +116,9 @@ export function PanelCampanias() {
       );
       setMensajeExito(`Se registró +1 donante para ${c.patientName}`);
       setTimeout(() => setMensajeExito(null), 3500);
+    } else if (res.requiereLogin) {
+      router.replace("/login");
+      return;
     } else {
       alert(`Error al sumar donante: ${res.error}`);
     }
@@ -131,6 +142,9 @@ export function PanelCampanias() {
       );
       setMensajeExito(`Campaña de ${c.patientName} marcada como completada.`);
       setTimeout(() => setMensajeExito(null), 3500);
+    } else if (res.requiereLogin) {
+      router.replace("/login");
+      return;
     } else {
       alert(`Error al completar la campaña: ${res.error}`);
     }

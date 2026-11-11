@@ -61,7 +61,7 @@ export interface CampaniaCreada {
  */
 export type Respuesta<T> =
   | { ok: true; datos: T }
-  | { ok: false; error: string };
+  | { ok: false; error: string; requiereLogin?: boolean };
 
 /* ------------------------------------------------------------- Traducción */
 
@@ -550,8 +550,11 @@ async function mensajeDeError(
   if (r.status === 400 || r.status === 422) {
     return "Alguno de los datos no es válido. Revisalos y probá de nuevo.";
   }
+  if (r.status === 401) {
+    return "Tu sesión de administrador venció. Iniciá sesión nuevamente.";
+  }
   if (r.status === 403) {
-    return "No tenés permiso para modificar esta campaña.";
+    return "No tenés permiso para operar en el panel administrativo.";
   }
   if (r.status === 404) {
     return mensaje404;
@@ -597,6 +600,113 @@ export interface FiltrosDashboard {
   institutionId?: string;
 }
 
+type ResultadoTokenAdmin =
+  | { ok: true; token: string }
+  | { ok: false; error: string; requiereLogin?: boolean };
+
+let tokenAdminCache: { token: string; expiresAt: number } | null = null;
+let tokenAdminEnCurso: Promise<ResultadoTokenAdmin> | null = null;
+
+export function limpiarTokenAdmin(): void {
+  tokenAdminCache = null;
+}
+
+async function obtenerTokenAdmin(forzarRefresco = false): Promise<ResultadoTokenAdmin> {
+  if (
+    !forzarRefresco &&
+    tokenAdminCache &&
+    tokenAdminCache.expiresAt - Date.now() > 30_000
+  ) {
+    return { ok: true, token: tokenAdminCache.token };
+  }
+
+  if (tokenAdminEnCurso && !forzarRefresco) {
+    return tokenAdminEnCurso;
+  }
+
+  const solicitud = (async (): Promise<ResultadoTokenAdmin> => {
+    try {
+      const r = await fetch("/api/admin/token", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+
+      if (r.status === 401 || r.status === 403) {
+        tokenAdminCache = null;
+        return {
+          ok: false,
+          error:
+            "Tu sesión de administrador venció o no tiene permisos. Volvé a iniciar sesión.",
+          requiereLogin: true,
+        };
+      }
+
+      if (!r.ok) {
+        return {
+          ok: false,
+          error: "No pudimos validar tu sesión administrativa.",
+        };
+      }
+
+      const data = (await r.json()) as { token?: string; expiresAt?: number };
+      if (!data.token || typeof data.expiresAt !== "number") {
+        return {
+          ok: false,
+          error: "Respuesta de sesión administrativa inválida.",
+        };
+      }
+
+      tokenAdminCache = { token: data.token, expiresAt: data.expiresAt };
+      return { ok: true, token: data.token };
+    } catch {
+      return {
+        ok: false,
+        error: "No pudimos verificar tu sesión con el servidor.",
+      };
+    } finally {
+      tokenAdminEnCurso = null;
+    }
+  })();
+
+  tokenAdminEnCurso = solicitud;
+  return solicitud;
+}
+
+async function fetchBackendAdmin(
+  url: string,
+  init: RequestInit,
+  signal: AbortSignal,
+): Promise<
+  | { ok: true; response: Response }
+  | { ok: false; error: string; requiereLogin?: boolean }
+> {
+  const tokenRes = await obtenerTokenAdmin(false);
+  if (!tokenRes.ok) return tokenRes;
+
+  const ejecutar = (token: string) =>
+    fetch(url, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...init.headers,
+        Authorization: `Bearer ${token}`,
+      },
+      signal,
+    });
+
+  let response = await ejecutar(tokenRes.token);
+
+  if (response.status === 401) {
+    limpiarTokenAdmin();
+    const refreshed = await obtenerTokenAdmin(true);
+    if (!refreshed.ok) return refreshed;
+    response = await ejecutar(refreshed.token);
+  }
+
+  return { ok: true, response };
+}
+
 /**
  * GET /campaigns?status=...&institutionId=...
  * Obtiene el listado de campañas con sus métricas acumuladas (visitas, donantes, avance).
@@ -613,13 +723,22 @@ export async function obtenerCampaniasDashboard(
     if (filtros?.institutionId) params.set("institutionId", filtros.institutionId);
 
     const query = params.toString() ? `?${params.toString()}` : "";
-    const r = await fetch(`${BASE}/campaigns${query}`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-      signal: corte.signal,
-    });
+    const req = await fetchBackendAdmin(
+      `${BASE}/campaigns${query}`,
+      { method: "GET" },
+      corte.signal,
+    );
 
-    if (!r.ok) return { ok: false, error: await mensajeDeError(r) };
+    if (!req.ok) return req;
+    const r = req.response;
+
+    if (!r.ok) {
+      return {
+        ok: false,
+        error: await mensajeDeError(r),
+        requiereLogin: r.status === 401,
+      };
+    }
 
     const sobre = await r.json();
     const data: CampaniaDashboard[] = (sobre.data ?? []).map(
@@ -698,17 +817,25 @@ export async function actualizarCampaniaAdmin(
   const reloj = setTimeout(() => corte.abort(), ESPERA_MAXIMA_MS);
 
   try {
-    const r = await fetch(
+    const req = await fetchBackendAdmin(
       `${BASE}/institutions/${encodeURIComponent(institutionId)}/campaigns/${encodeURIComponent(campaignId)}`,
       {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(cambios),
-        signal: corte.signal,
       },
+      corte.signal,
     );
 
-    if (!r.ok) return { ok: false, error: await mensajeDeError(r) };
+    if (!req.ok) return req;
+    const r = req.response;
+
+    if (!r.ok) {
+      return {
+        ok: false,
+        error: await mensajeDeError(r),
+        requiereLogin: r.status === 401,
+      };
+    }
 
     const sobre = await r.json();
     const c = sobre.data;

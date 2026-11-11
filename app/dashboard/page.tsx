@@ -1,7 +1,9 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { PanelCampanias } from "@/components/dashboard/panel-campanias";
+import { isAdminEmail } from "@/lib/admin-auth";
 import { INSTITUCION } from "@/lib/institucion";
 
 export const metadata = {
@@ -10,8 +12,23 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-async function CabeceraDashboard() {
+async function requireAdminSession() {
   const session = await auth();
+  const email = session?.user?.email;
+
+  if (!email) {
+    redirect("/login");
+  }
+
+  if (!isAdminEmail(email)) {
+    redirect("/login?error=AccessDenied");
+  }
+
+  return session;
+}
+
+async function CabeceraDashboard() {
+  const session = await requireAdminSession();
 
   return (
     <header className="border-b border-border bg-surface sticky top-0 z-40 shadow-2xs">
@@ -71,6 +88,11 @@ async function CabeceraDashboard() {
   );
 }
 
+async function PanelDashboardProtegido() {
+  await requireAdminSession();
+  return <PanelCampanias />;
+}
+
 export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-ink-50 flex flex-col">
@@ -104,7 +126,7 @@ export default function DashboardPage() {
             </div>
           }
         >
-          <PanelCampanias />
+          <PanelDashboardProtegido />
         </Suspense>
       </main>
     </div>

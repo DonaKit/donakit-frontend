@@ -4,6 +4,7 @@ import { useId, useMemo, useState } from "react";
 import { Icon } from "@/lib/icons";
 import { nombreCategoria, PREGUNTAS_FRECUENTES, type PreguntaFrecuente } from "@/lib/contenido-donante";
 import type { PreguntaBackend } from "@/lib/api";
+import { SeccionDesplegable } from "./seccion-desplegable";
 
 /* ============================================================================
    US-15/ST-03 — Acordeón accesible de preguntas frecuentes
@@ -25,6 +26,9 @@ import type { PreguntaBackend } from "@/lib/api";
 
    Las preguntas salen del backend (US-15/ST-02, tabla `faq_item`). Si la
    campaña no trae ninguna, se usan las generales de lib/contenido-donante.ts.
+
+   Después de QA (US-18) la sección entera arranca cerrada, dentro de una
+   SeccionDesplegable: en el celular ocupaba varias pantallas.
    ========================================================================== */
 
 /** "Sí, AYÚNAS" -> "si, ayunas": sin tildes y en minúscula. */
@@ -75,49 +79,51 @@ export function PreguntasFrecuentes({ desdeBackend = [] }: { desdeBackend?: Preg
   }
 
   return (
-    <section aria-labelledby="titulo-faq" className="flex flex-col gap-4">
-      <h2 id="titulo-faq" className="flex items-center gap-2 text-xl font-semibold">
-        <Icon name="pregunta" size={22} />
-        Preguntas frecuentes
-      </h2>
-
-      <div>
-        <label htmlFor={idBuscador} className="sr-only">
-          Buscar en las preguntas frecuentes
-        </label>
-        <div className="relative">
-          <Icon name="buscar" size={20} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
-          <input
-            id={idBuscador}
-            type="search"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscá: ayunas, turno, tatuaje…"
-            className="h-12 w-full rounded-lg bg-surface pl-10 pr-3 text-base ring-1 ring-border-interactive placeholder:text-text-muted focus:outline-2 focus:outline-focus"
-            aria-describedby={`${idBuscador}-resultados`}
-          />
+    <SeccionDesplegable
+      id="titulo-faq"
+      icono="pregunta"
+      titulo="Preguntas frecuentes"
+      resumen={`${lista.length} respuestas sobre cómo donar, con buscador.`}
+    >
+      <div className="flex flex-col gap-4">
+        <div>
+          <label htmlFor={idBuscador} className="sr-only">
+            Buscar en las preguntas frecuentes
+          </label>
+          <div className="relative">
+            <Icon name="buscar" size={20} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+            <input
+              id={idBuscador}
+              type="search"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscá: ayunas, turno, tatuaje…"
+              className="h-12 w-full rounded-lg bg-surface pl-10 pr-3 text-base ring-1 ring-border-interactive placeholder:text-text-muted focus:outline-2 focus:outline-focus"
+              aria-describedby={`${idBuscador}-resultados`}
+            />
+          </div>
+          <p id={`${idBuscador}-resultados`} aria-live="polite" className="mt-2 text-sm text-text-secondary">
+            {q === ""
+              ? `${lista.length} preguntas`
+              : visibles.length === 0
+                ? "No encontramos esa palabra. Probá con otra o llamá al banco de sangre."
+                : `${visibles.length} ${visibles.length === 1 ? "resultado" : "resultados"}`}
+          </p>
         </div>
-        <p id={`${idBuscador}-resultados`} aria-live="polite" className="mt-2 text-sm text-text-secondary">
-          {q === ""
-            ? `${lista.length} preguntas`
-            : visibles.length === 0
-              ? "No encontramos esa palabra. Probá con otra o llamá al banco de sangre."
-              : `${visibles.length} ${visibles.length === 1 ? "resultado" : "resultados"}`}
-        </p>
-      </div>
 
-      <div className="divide-y divide-border overflow-hidden rounded-xl bg-surface ring-1 ring-border">
-        {visibles.map((p) => (
-          <Item
-            key={p.id}
-            p={p}
-            // Con búsqueda activa, las coincidencias se ven abiertas.
-            abierta={q !== "" || abiertas.has(p.id)}
-            alAlternar={() => alternar(p.id)}
-          />
-        ))}
+        <div className="divide-y divide-border overflow-hidden rounded-xl bg-surface ring-1 ring-border">
+          {visibles.map((p) => (
+            <Item
+              key={p.id}
+              p={p}
+              // Con búsqueda activa, las coincidencias se ven abiertas.
+              abierta={q !== "" || abiertas.has(p.id)}
+              alAlternar={() => alternar(p.id)}
+            />
+          ))}
+        </div>
       </div>
-    </section>
+    </SeccionDesplegable>
   );
 }
 

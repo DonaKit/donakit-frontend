@@ -2,13 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icons";
-import { URL_MINISTERIO } from "@/lib/institucion";
 import { nombreCategoria, PARA_EL_DIA, PREGUNTAS_APTITUD, type PreguntaAptitud } from "@/lib/contenido-donante";
 import type { Requisito } from "@/lib/api";
 
 /* ============================================================================
    US-14/ST-03 — Autoevaluación interactiva de requisitos
-   US-14/ST-04 — Botón al portal oficial del Ministerio de Salud
    ----------------------------------------------------------------------------
    En vez de una lista de requisitos para leer, preguntas de sí o no. Es más
    rápido de contestar en el celular, y cada respuesta da una explicación
@@ -29,6 +27,10 @@ import type { Requisito } from "@/lib/api";
    decisión final la toma el equipo médico. Prometer más que eso sería
    inventar un diagnóstico.
 
+   Sin enlaces a páginas externas (ni del hospital ni del Ministerio): el
+   equipo decidió sacarlos después de QA (US-18). Sacaban a la persona de la
+   página justo cuando estaba decidiendo si ir a donar.
+
    Debajo van los requisitos que la institución cargó en la base (US-14/ST-02,
    tabla `requirement`). No reemplazan a las preguntas: la tabla guarda
    requisitos redactados, no preguntas de sí o no. Los que tienen
@@ -39,13 +41,7 @@ type Respuesta = "si" | "no";
 type Respuestas = Record<string, Respuesta | undefined>;
 const TOTAL = PREGUNTAS_APTITUD.length;
 
-export function Autoevaluacion({
-  requisitos = [],
-  urlRequisitos = null,
-}: {
-  requisitos?: Requisito[];
-  urlRequisitos?: string | null;
-}) {
+export function Autoevaluacion({ requisitos = [] }: { requisitos?: Requisito[] }) {
   const [r, setR] = useState<Respuestas>({});
   /** Índice de la pregunta visible, o "fin" cuando se muestra el resultado. */
   const [paso, setPaso] = useState<number | "fin">(0);
@@ -174,32 +170,8 @@ export function Autoevaluacion({
               </li>
             ))}
           </ul>
-          {urlRequisitos && (
-            <a
-              href={urlRequisitos}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 self-start text-sm font-semibold underline underline-offset-2"
-            >
-              Ver los requisitos completos del hospital
-              <Icon name="enlaceExterno" size={16} />
-              <span className="sr-only">(se abre en una pestaña nueva)</span>
-            </a>
-          )}
         </div>
       )}
-
-      {/* US-14/ST-04 */}
-      <a
-        href={URL_MINISTERIO}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 text-center text-base font-semibold text-text-primary ring-2 ring-border-interactive"
-      >
-        Requisitos oficiales del Ministerio de Salud
-        <Icon name="enlaceExterno" size={18} className="shrink-0" />
-        <span className="sr-only">(se abre en una pestaña nueva)</span>
-      </a>
     </section>
   );
 }

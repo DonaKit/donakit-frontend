@@ -1,14 +1,13 @@
 "use client";
 
-import { useState } from "react";
 import { Icon } from "@/lib/icons";
 import { INSTITUCION } from "@/lib/institucion";
-import { Dialogo } from "@/components/ui/dialogo";
 import type { CampaniaPublica } from "@/lib/api";
+import { SeccionDesplegable } from "./seccion-desplegable";
 
 /* ============================================================================
    US-17/ST-03 — Botones de contacto directo con Hemoterapia
-   US-17/ST-04 — Diálogo con el contacto secundario
+   US-17/ST-04 — Contacto secundario
    ----------------------------------------------------------------------------
    Datos: primero los de la institución que devuelve el backend (US-17/ST-02:
    phone, whatsapp, email, website_url). Si la base no los tiene y la campaña
@@ -18,8 +17,13 @@ import type { CampaniaPublica } from "@/lib/api";
    - Llamar: enlace tel:, que en el celular marca directo.
    - WhatsApp: enlace wa.me con un mensaje ya escrito, para que la persona no
      tenga que pensar cómo empezar.
-   Lo secundario (otro teléfono, email, web) va en un diálogo, para no
-   competir con el botón principal.
+   Lo secundario (otro teléfono, email, web) va debajo, con letra más chica,
+   para no competir con el botón principal.
+
+   CAMBIO DESPUÉS DE QA (US-18): la sección arranca cerrada (desplegable),
+   y lo secundario ya no va en un diálogo aparte. En el celular el diálogo se
+   abría vacío; además, con la sección desplegable, un diálogo adentro era un
+   paso de más. Ahora al abrir "¿Tenés dudas?" está todo a la vista.
 
    Si no hay ningún canal, la sección no se muestra: un "¿Tenés dudas?" sin a
    quién preguntar es peor que no decir nada.
@@ -39,7 +43,6 @@ function enlaceWhatsapp(numero: string, mensaje: string): string {
 }
 
 export function Contacto({ c, extras }: { c: CampaniaPublica; extras: boolean }) {
-  const [abierto, setAbierto] = useState(false);
   const inst = c.institucion;
 
   const telefono = inst?.telefono
@@ -63,102 +66,94 @@ export function Contacto({ c, extras }: { c: CampaniaPublica; extras: boolean })
   const haySecundario = otrosTelefonos.length > 0 || email || web;
 
   return (
-    <section aria-labelledby="titulo-contacto" className="flex flex-col gap-4">
-      <h2 id="titulo-contacto" className="flex items-center gap-2 text-xl font-semibold">
-        <Icon name="telefono" size={22} />
-        ¿Tenés dudas?
-      </h2>
-      <p className="-mt-2 text-sm text-text-secondary">
-        Consultá directamente con el banco de sangre antes de ir.
-      </p>
+    <SeccionDesplegable
+      id="titulo-contacto"
+      icono="telefono"
+      titulo="¿Tenés dudas?"
+      resumen="Consultá con el banco de sangre antes de ir."
+    >
+      <div className="flex flex-col gap-3">
+        {telefono && (
+          <a
+            href={telefono.enlace}
+            className="flex min-h-14 items-center justify-center gap-2.5 rounded-lg bg-surface-brand px-4 text-lg font-semibold text-text-on-brand"
+          >
+            <Icon name="telefono" size={20} />
+            Llamar al {telefono.visible}
+          </a>
+        )}
 
-      {telefono && (
-        <a
-          href={telefono.enlace}
-          className="flex min-h-14 items-center justify-center gap-2.5 rounded-lg bg-surface-brand px-4 text-lg font-semibold text-text-on-brand"
-        >
-          <Icon name="telefono" size={20} />
-          Llamar al {telefono.visible}
-        </a>
-      )}
+        {whatsapp && (
+          <a
+            href={enlaceWhatsapp(whatsapp, `Hola, quiero donar sangre por el pedido de ${c.nombre}. ¿Me pueden ayudar?`)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 text-base font-semibold text-text-primary ring-2 ring-border-interactive"
+          >
+            <Icon name="whatsapp" size={20} />
+            Escribir por WhatsApp
+            <span className="sr-only">(se abre WhatsApp)</span>
+          </a>
+        )}
 
-      {whatsapp && (
-        <a
-          href={enlaceWhatsapp(whatsapp, `Hola, quiero donar sangre por el pedido de ${c.nombre}. ¿Me pueden ayudar?`)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 text-base font-semibold text-text-primary ring-2 ring-border-interactive"
-        >
-          <Icon name="whatsapp" size={20} />
-          Escribir por WhatsApp
-          <span className="sr-only">(se abre WhatsApp)</span>
-        </a>
-      )}
+        {/* US-17/ST-04 */}
+        {haySecundario && (
+          <div className="mt-2 flex flex-col gap-3">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-text-muted">
+              Otras formas de contacto
+            </h3>
+            <dl className="flex flex-col gap-3 text-base">
+              {otrosTelefonos.map((t) => (
+                <div key={t.enlace}>
+                  <dt className="text-sm font-semibold text-text-secondary">{t.nombre}</dt>
+                  <dd>
+                    <a href={t.enlace} className="font-semibold underline underline-offset-2">
+                      {t.visible}
+                    </a>
+                    {"nota" in t && t.nota && <span className="block text-sm text-text-secondary">{t.nota}</span>}
+                  </dd>
+                </div>
+              ))}
+              {email && (
+                <div>
+                  <dt className="text-sm font-semibold text-text-secondary">Email</dt>
+                  <dd>
+                    <a
+                      href={`mailto:${email}?subject=${encodeURIComponent(`Donación por ${c.nombre}`)}`}
+                      className="inline-flex items-center gap-1.5 font-semibold underline underline-offset-2 wrap-anywhere"
+                    >
+                      <Icon name="email" size={16} className="shrink-0" />
+                      {email}
+                    </a>
+                  </dd>
+                </div>
+              )}
+              {web && (
+                <div>
+                  <dt className="text-sm font-semibold text-text-secondary">Web</dt>
+                  <dd>
+                    <a
+                      href={web}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 font-semibold underline underline-offset-2 wrap-anywhere"
+                    >
+                      {web.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+                      <Icon name="enlaceExterno" size={16} className="shrink-0" />
+                      <span className="sr-only">(se abre en una pestaña nueva)</span>
+                    </a>
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </div>
+        )}
 
-      {haySecundario && (
-        <button
-          type="button"
-          onClick={() => setAbierto(true)}
-          className="flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 text-base font-semibold text-text-primary ring-2 ring-border-interactive"
-        >
-          <Icon name="info" size={20} />
-          Otras formas de contacto
-        </button>
-      )}
-
-      {/* US-17/ST-04 */}
-      <Dialogo abierto={abierto} alCerrar={() => setAbierto(false)} titulo="Otras formas de contacto">
-        <div className="flex flex-col gap-4 pt-3">
-          <dl className="flex flex-col gap-4 text-base">
-            {otrosTelefonos.map((t) => (
-              <div key={t.enlace}>
-                <dt className="text-sm font-semibold text-text-secondary">{t.nombre}</dt>
-                <dd>
-                  <a href={t.enlace} className="font-semibold underline underline-offset-2">
-                    {t.visible}
-                  </a>
-                  {"nota" in t && t.nota && <span className="block text-sm text-text-secondary">{t.nota}</span>}
-                </dd>
-              </div>
-            ))}
-            {email && (
-              <div>
-                <dt className="text-sm font-semibold text-text-secondary">Email</dt>
-                <dd>
-                  <a
-                    href={`mailto:${email}?subject=${encodeURIComponent(`Donación por ${c.nombre}`)}`}
-                    className="inline-flex items-center gap-1.5 break-all font-semibold underline underline-offset-2"
-                  >
-                    <Icon name="email" size={16} className="shrink-0" />
-                    {email}
-                  </a>
-                </dd>
-              </div>
-            )}
-            {web && (
-              <div>
-                <dt className="text-sm font-semibold text-text-secondary">Web</dt>
-                <dd>
-                  <a
-                    href={web}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 break-all font-semibold underline underline-offset-2"
-                  >
-                    {web.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
-                    <Icon name="enlaceExterno" size={16} className="shrink-0" />
-                    <span className="sr-only">(se abre en una pestaña nueva)</span>
-                  </a>
-                </dd>
-              </div>
-            )}
-          </dl>
-          <p className="rounded-lg bg-surface-muted p-3 text-sm text-text-secondary">
-            Para consultas por el paciente, hablá con la familia que compartió
-            este pedido.
-          </p>
-        </div>
-      </Dialogo>
-    </section>
+        <p className="rounded-lg bg-surface-muted p-3 text-sm text-text-secondary">
+          Para consultas por el paciente, hablá con la familia que compartió
+          este pedido.
+        </p>
+      </div>
+    </SeccionDesplegable>
   );
 }

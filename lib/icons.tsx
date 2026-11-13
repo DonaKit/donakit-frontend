@@ -17,6 +17,10 @@ import {
   Users,
   X,
   ZoomIn,
+  Eye,
+  Plus,
+  Filter,
+  RefreshCw,
   Building2,
   CalendarClock,
   CheckCircle2,
@@ -84,6 +88,12 @@ export const icons = {
   listo: Check,
   volver: ArrowLeft,
   cargando: LoaderCircle,
+
+  // --- Panel administrativo y métricas (US-19/US-20)
+  visitas: Eye,
+  mas: Plus,
+  filtro: Filter,
+  recargar: RefreshCw,
 
   // --- Landing del donante (Sprint 4)
   turno: CalendarCheck,

@@ -14,6 +14,12 @@ import { Icon } from "@/lib/icons";
    - el resto de la página queda inerte para el teclado y el lector de
      pantalla;
    - al cerrar, el foco vuelve al botón que lo abrió.
+
+   El diálogo normal es un bloque común, sin flex. Antes el cuerpo era
+   `flex-1` dentro de una columna flex sin alto fijo: en Safari de iPhone eso
+   deja el contenido en 0 px de alto y el diálogo se ve como una barrita con
+   el título y la cruz, sin nada adentro (lo encontró QA en el celular). Solo
+   el de tamaño "pantalla", que sí tiene alto fijo, usa la columna flex.
    ========================================================================== */
 
 interface Props {
@@ -57,10 +63,10 @@ export function Dialogo({
       className={`m-auto rounded-xl bg-surface p-0 text-text-primary shadow-xl backdrop:bg-ink-900/70 ${
         tamano === "pantalla"
           ? "h-[92dvh] w-[96vw] max-w-[96vw]"
-          : "w-[min(92vw,440px)]"
+          : "max-h-[90dvh] w-[min(92vw,440px)] overflow-y-auto"
       }`}
     >
-      <div className={`flex h-full flex-col ${tamano === "pantalla" ? "p-3" : "p-5"}`}>
+      <div className={tamano === "pantalla" ? "flex h-full flex-col p-3" : "p-5"}>
         <div className="flex items-start justify-between gap-4">
           <h2
             id="dialogo-titulo"
@@ -76,7 +82,7 @@ export function Dialogo({
             <Icon name="cerrar" label="Cerrar" size={22} />
           </button>
         </div>
-        <div className="min-h-0 flex-1">{children}</div>
+        <div className={tamano === "pantalla" ? "min-h-0 flex-1" : undefined}>{children}</div>
       </div>
     </dialog>
   );

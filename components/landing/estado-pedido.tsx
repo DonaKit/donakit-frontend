@@ -8,7 +8,12 @@ import type { CampaniaPublica } from "@/lib/api";
 /* ============================================================================
    US-13/ST-03 — Contador de donantes y cuenta regresiva
    ----------------------------------------------------------------------------
-   Dos números que responden "¿todavía hace falta?" y "¿hasta cuándo?".
+   Dos datos: cuántos donantes se pidieron y hasta cuándo.
+
+   Solo la cantidad pedida, sin "faltan X" ni barra de avance (decisión del
+   equipo después de QA, US-18): DonaKit no está conectado al registro de
+   donaciones de la institución, así que un "faltan" sería un número que no
+   se actualiza nunca y le diría a la gente algo falso.
 
    La fecha límite es un día, no una hora. La cuenta regresiva dice cuántos
    días faltan; el último día cambia a horas, porque "faltan 0 días" no dice
@@ -30,39 +35,23 @@ export function EstadoPedido({ c }: { c: CampaniaPublica }) {
 
   return (
     <section aria-label="Estado del pedido" className="grid gap-3 sm:grid-cols-2">
-      {meta ? <Donantes actuales={c.donantesActuales} meta={meta} /> : null}
+      {meta ? <Donantes meta={meta} /> : null}
       {c.fecha ? <CuentaRegresiva fecha={c.fecha} ahora={ahora} /> : null}
     </section>
   );
 }
 
-function Donantes({ actuales, meta }: { actuales: number; meta: number }) {
-  const faltan = Math.max(0, meta - actuales);
-  const avance = Math.min(100, Math.round((actuales / meta) * 100));
+function Donantes({ meta }: { meta: number }) {
   return (
     <div className="rounded-xl bg-surface p-4 ring-1 ring-border">
       <p className="flex items-center gap-2 text-sm font-semibold text-text-secondary">
         <Icon name="donantes" size={18} />
-        Donantes
+        Se necesitan
       </p>
-      <p className="mt-2 text-text-primary">
-        <span className="font-display text-4xl font-bold">{faltan}</span>{" "}
-        <span className="text-base">{faltan === 1 ? "falta" : "faltan"} de {meta}</span>
+      <p className="mt-2 font-display text-4xl font-bold text-text-primary">
+        {meta} {meta === 1 ? "donante" : "donantes"}
       </p>
-      <div
-        role="progressbar"
-        aria-label="Donantes confirmados"
-        aria-valuemin={0}
-        aria-valuemax={meta}
-        aria-valuenow={actuales}
-        aria-valuetext={`${actuales} de ${meta} donantes`}
-        className="mt-3 h-2.5 overflow-hidden rounded-full bg-ink-200"
-      >
-        <div className="h-full rounded-full bg-red-600" style={{ width: `${avance}%` }} />
-      </div>
-      <p className="mt-2 text-sm text-text-secondary">
-        {actuales === 0 ? "Todavía nadie confirmó: podés ser la primera persona." : `${actuales} ya confirmaron.`}
-      </p>
+      <p className="mt-2 text-sm text-text-secondary">Cada donación cuenta: podés ser una.</p>
     </div>
   );
 }

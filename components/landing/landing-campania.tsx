@@ -119,7 +119,7 @@ export function LandingCampania({
         )}
 
         <Sede c={c} extras={extras} />
-        <Autoevaluacion requisitos={c.requisitos} urlRequisitos={c.institucion?.urlRequisitos ?? null} />
+        <Autoevaluacion requisitos={c.requisitos} />
         <Contacto c={c} extras={extras} />
         <PreguntasFrecuentes desdeBackend={c.preguntas} />
 

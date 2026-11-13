@@ -21,6 +21,7 @@ import {
 import { urlCampania } from "@/lib/sitio";
 import { textoParaCompartir } from "@/lib/texto-compartir";
 import { descargarArchivo } from "@/lib/descargar";
+import { copiarTexto } from "@/lib/copiar";
 import { useAvisos } from "@/components/ui/avisos";
 import { TarjetaPlaca } from "./tarjeta-placa";
 import { SelectorFormato } from "./selector-formato";
@@ -48,6 +49,16 @@ import { DescargaZip } from "./descarga-zip";
 
    Ese guardado se hace UNA vez por campaña, con las dos placas y sin
    registrar descargas. Después cada descarga registra solo su formato.
+
+   El guardado es silencioso: no se muestra ningún estado en pantalla. La
+   página del caso ya funciona desde que se crea la campaña, así que un
+   "se publica cuando descargues" o un "no pudimos publicar" le decía a la
+   persona algo que no era cierto (comentario de QA en US-17). Si el guardado
+   falla, queda registrado en la consola y se reintenta en la próxima acción.
+
+   PÁGINA DEL CASO PRIMERO: el enlace va arriba de todo, antes de las placas,
+   con su botón para copiarlo. Es lo primero que la persona quiere mandar, y
+   abajo de todo se perdía.
    ========================================================================== */
 
 const A_ASSET: Record<FormatoPlaca, FormatoAsset> = { "1x1": "SQUARE_1_1", "9x16": "STORY_9_16" };
@@ -77,7 +88,8 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [formato, setFormato] = useState<FormatoPlaca>("1x1");
   const [ampliado, setAmpliado] = useState<FormatoPlaca | null>(null);
-  const [guardado, setGuardado] = useState<"no" | "guardando" | "si" | "error">("no");
+  const [enlaceCopiado, setEnlaceCopiado] = useState(false);
+  const relojEnlace = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titulo = useRef<HTMLHeadingElement>(null);
 
   const datos: DatosPlaca = {
@@ -98,6 +110,9 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
   // se entera de que cambió la pantalla, y nadie queda a mitad de la página.
   useEffect(() => {
     titulo.current?.focus();
+    return () => {
+      if (relojEnlace.current) clearTimeout(relojEnlace.current);
+    };
   }, []);
 
   // ------------------------------------------------------------ Generación
@@ -140,7 +155,6 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
     const clave = claveDe(campania, pedido);
     let p = guardados.get(clave);
     if (!p) {
-      setGuardado("guardando");
       // Con las placas va el texto para compartir (US-06/ST-02).
       p = guardarPlacas(
         campania,
@@ -155,10 +169,9 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
     const r = await p;
     if (!r.ok) {
       guardados.delete(clave); // el próximo intento vuelve a pedir
-      setGuardado("error");
+      console.warn(`DonaKit: no se pudieron guardar las placas (${r.error}).`);
       return false;
     }
-    setGuardado("si");
     return true;
   }
 
@@ -169,6 +182,19 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
         await registrarDescarga(campania, formatos.map((f) => A_ASSET[f]), opciones);
       }
     })();
+  }
+
+  async function copiarEnlace() {
+    const ok = await copiarTexto(enlace);
+    if (!ok) {
+      avisar("No pudimos copiar. Mantené apretado el enlace para copiarlo.", "error");
+      return;
+    }
+    setEnlaceCopiado(true);
+    avisar("Enlace copiado. Pegalo donde quieras compartir el pedido.");
+    void asegurarGuardado();
+    if (relojEnlace.current) clearTimeout(relojEnlace.current);
+    relojEnlace.current = setTimeout(() => setEnlaceCopiado(false), 2000);
   }
 
   function descargar(f: FormatoPlaca) {
@@ -212,6 +238,43 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
         </p>
       </div>
 
+      <section
+        aria-labelledby="titulo-enlace"
+        className="flex flex-col gap-3 rounded-xl bg-surface-muted p-4 ring-1 ring-border"
+      >
+        <div>
+          <h2 id="titulo-enlace" className="flex items-center gap-2 text-base font-semibold">
+            <Icon name="enlace" size={18} />
+            Página del caso
+          </h2>
+          <p className="mt-1 text-sm text-text-secondary">
+            Ya está activa: es la que abre el QR de las placas.
+          </p>
+        </div>
+        <a
+          href={enlace}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-start gap-2 text-sm font-semibold text-text-primary underline underline-offset-2 wrap-anywhere"
+        >
+          <Icon name="enlaceExterno" size={18} className="mt-px shrink-0" />
+          {enlace.replace(/^https?:\/\//, "")}
+          <span className="sr-only">(se abre en una pestaña nueva)</span>
+        </a>
+        <button
+          type="button"
+          onClick={() => void copiarEnlace()}
+          className={`flex h-12 w-full items-center justify-center gap-2 rounded-lg text-base font-semibold ring-2 transition-colors ${
+            enlaceCopiado
+              ? "bg-success-bg text-success ring-success"
+              : "bg-surface text-text-primary ring-border-interactive"
+          }`}
+        >
+          <Icon name={enlaceCopiado ? "listo" : "copiar"} size={18} />
+          <span aria-live="polite">{enlaceCopiado ? "Enlace copiado" : "Copiar enlace"}</span>
+        </button>
+      </section>
+
       <SelectorFormato activo={formato} alCambiar={setFormato} paneles={{ "1x1": panel("1x1"), "9x16": panel("9x16") }} />
 
       <DescargaZip
@@ -221,20 +284,6 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
       />
 
       <BloqueTexto texto={texto} alCopiar={() => void asegurarGuardado()} />
-
-      <section className="flex flex-col gap-3 rounded-lg bg-surface-muted p-4 ring-1 ring-border">
-        <h2 className="text-base font-semibold">Página del caso</h2>
-        <a
-          href={enlace}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 break-all text-sm font-semibold text-text-primary underline underline-offset-2"
-        >
-          <Icon name="enlaceExterno" size={18} className="shrink-0" />
-          {enlace.replace(/^https?:\/\//, "")}
-        </a>
-        <EstadoGuardado estado={guardado} reintentar={() => void asegurarGuardado()} />
-      </section>
 
       <section className="flex flex-col gap-2 border-t border-border pt-6">
         <h2 className="text-base font-semibold">¿Algo está mal?</h2>
@@ -258,39 +307,6 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
         descripcion={ampliado ? descripcion(ampliado) : ""}
         alCerrar={() => setAmpliado(null)}
       />
-    </div>
-  );
-}
-
-function EstadoGuardado({
-  estado,
-  reintentar,
-}: {
-  estado: "no" | "guardando" | "si" | "error";
-  reintentar: () => void;
-}) {
-  if (estado === "no")
-    return (
-      <p className="text-sm text-text-secondary">
-        Se publica cuando descargues una placa o copies el texto.
-      </p>
-    );
-  if (estado === "guardando") return <p className="text-sm text-text-secondary">Publicando el pedido…</p>;
-  if (estado === "si")
-    return (
-      <p className="flex items-center gap-1.5 text-sm text-success">
-        <Icon name="exito" size={16} />
-        Pedido publicado y placas guardadas.
-      </p>
-    );
-  return (
-    <div role="alert" className="text-sm">
-      <p className="text-danger">
-        No pudimos publicar el pedido. Las placas se pueden descargar igual.
-      </p>
-      <button type="button" onClick={reintentar} className="mt-1 font-semibold underline underline-offset-2">
-        Reintentar
-      </button>
     </div>
   );
 }

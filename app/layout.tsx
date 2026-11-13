@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
+import { ProveedorAvisos } from "@/components/ui/avisos";
 
 /* ============================================================================
    US-006/ST-02 — Tipografía corporativa con next/font
@@ -49,7 +50,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${inter.variable} ${outfit.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-surface font-sans text-text-primary">
-        {children}
+        <ProveedorAvisos>{children}</ProveedorAvisos>
       </body>
     </html>
   );

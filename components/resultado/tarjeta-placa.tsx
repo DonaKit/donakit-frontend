@@ -6,6 +6,7 @@ import type { FormatoPlaca } from "@/lib/placa";
 /* ============================================================================
    US-05/ST-01 — PlatePreviewCard: una placa en vista previa
    US-07/ST-01 — con su botón de descarga directa
+   Botón "Compartir" (pedido del equipo): menú nativo del celular
    ----------------------------------------------------------------------------
    El mismo componente sirve para los dos formatos: recibe las medidas y deja
    que la relación de aspecto la ponga CSS. Así la tarjeta ocupa su lugar
@@ -15,6 +16,12 @@ import type { FormatoPlaca } from "@/lib/placa";
    La vertical se limita en alto: a 1080×1920, en un celular ocuparía tres
    pantallas. La vista previa es para revisar, no para mirar a tamaño real;
    para eso está el zoom.
+
+   Si el dispositivo puede compartir archivos (lib/compartir.ts), el botón
+   principal es "Compartir" y "Descargar" pasa a segundo plano: en el celular
+   compartir es lo que la persona quiere hacer, y descargar es un paso de
+   más (bajar a la galería y después compartir desde ahí). En la compu no hay
+   "Compartir" y "Descargar" queda como principal.
    ========================================================================== */
 
 export const MEDIDAS: Record<FormatoPlaca, { ancho: number; alto: number; nombre: string; uso: string }> = {
@@ -30,9 +37,11 @@ interface Props {
   descripcion: string;
   alAmpliar: () => void;
   alDescargar: () => void;
+  /** Solo se pasa si el dispositivo puede compartir archivos. */
+  alCompartir?: () => void;
 }
 
-export function TarjetaPlaca({ formato, url, error, descripcion, alAmpliar, alDescargar }: Props) {
+export function TarjetaPlaca({ formato, url, error, descripcion, alAmpliar, alDescargar, alCompartir }: Props) {
   const m = MEDIDAS[formato];
   const lista = url !== null;
 
@@ -91,15 +100,36 @@ export function TarjetaPlaca({ formato, url, error, descripcion, alAmpliar, alDe
         </button>
       </figcaption>
 
+      {alCompartir && (
+        <div className="flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={alCompartir}
+            disabled={!lista}
+            className="flex h-14 w-full items-center justify-center gap-2.5 rounded-lg bg-surface-brand text-lg font-semibold text-text-on-brand disabled:bg-ink-400"
+          >
+            <Icon name="compartir" size={20} />
+            Compartir {m.nombre.toLowerCase()}
+          </button>
+          <p className="text-center text-xs text-text-secondary">
+            Va la placa con el texto. En Instagram el texto no pasa: copialo más abajo.
+          </p>
+        </div>
+      )}
+
       <button
         type="button"
         onClick={alDescargar}
         disabled={!lista}
-        className="flex h-14 w-full items-center justify-center gap-2.5 rounded-lg bg-surface-brand text-lg font-semibold text-text-on-brand disabled:bg-ink-400"
+        className={
+          alCompartir
+            ? "flex h-12 w-full items-center justify-center gap-2 rounded-lg text-base font-semibold text-text-primary ring-2 ring-border-interactive disabled:text-text-muted"
+            : "flex h-14 w-full items-center justify-center gap-2.5 rounded-lg bg-surface-brand text-lg font-semibold text-text-on-brand disabled:bg-ink-400"
+        }
       >
-        <Icon name="descargar" size={20} />
+        <Icon name="descargar" size={alCompartir ? 18 : 20} />
         Descargar {m.nombre.toLowerCase()}
-        <span className="text-sm font-normal opacity-80">· {m.uso}</span>
+        {!alCompartir && <span className="text-sm font-normal opacity-80">· {m.uso}</span>}
       </button>
     </figure>
   );

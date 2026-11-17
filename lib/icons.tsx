@@ -19,6 +19,7 @@ import {
   ZoomIn,
   Eye,
   Plus,
+  Minus,
   Filter,
   RefreshCw,
   Building2,
@@ -92,6 +93,7 @@ export const icons = {
   // --- Panel administrativo y métricas (US-19/US-20)
   visitas: Eye,
   mas: Plus,
+  menos: Minus,
   filtro: Filter,
   recargar: RefreshCw,
 

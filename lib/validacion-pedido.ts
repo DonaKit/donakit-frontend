@@ -32,6 +32,26 @@ export const NOMBRE_LARGO = 32;
 /** Largo máximo aceptado. Más que esto no entra ni achicado. */
 export const NOMBRE_MAXIMO = 60;
 
+/* Caracteres que acepta un nombre (pedido del equipo: "que no permita
+   símbolos"). Letras de cualquier idioma, con sus tildes y diéresis (\p{L}
+   y \p{M}: "Begoña", "Müller", "Zoë"), espacios, guion ("María-José"),
+   apóstrofo recto o tipográfico ("O'Connor", "D’Angelo") y punto para una
+   inicial ("Juan C. Pérez"). Todo lo demás —@, #, %, emojis, paréntesis,
+   barras— no es parte de un nombre y se rechaza.
+
+   El nombre sale en la placa con letra grande: un símbolo ahí se ve como un
+   error de tipeo, y en el enlace (el slug) se perdería igual. */
+const PERMITIDO_EN_NOMBRE = /[\p{L}\p{M}\s.'’-]/u;
+
+/** El primer carácter que no va en un nombre, o null si no hay ninguno. */
+export function primerSimbolo(valor: string): string | null {
+  for (const c of valor) {
+    if (/\d/.test(c)) continue; // los números tienen su propio mensaje
+    if (!PERMITIDO_EN_NOMBRE.test(c)) return c;
+  }
+  return null;
+}
+
 export function validarNombre(valor: string): Resultado {
   const v = valor.trim();
 
@@ -43,6 +63,14 @@ export function validarNombre(valor: string): Resultado {
   }
   if (/\d/.test(v)) {
     return { ok: false, error: "El nombre no lleva números.", inmediato: true };
+  }
+  const simbolo = primerSimbolo(v);
+  if (simbolo) {
+    return {
+      ok: false,
+      error: `El nombre no puede llevar "${simbolo}". Usá solo letras, espacios, guiones o apóstrofos.`,
+      inmediato: true,
+    };
   }
   if (v.length > NOMBRE_MAXIMO) {
     return {

@@ -31,7 +31,11 @@ export function Cabecera({ c }: { c: CampaniaPublica }) {
 
         <p className="mt-6 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-red-200">
           <Icon name="donacion" size={18} />
-          Se necesitan donantes de sangre
+          {c.estado === "COMPLETED"
+            ? "Pedido de donantes completado"
+            : c.estado === "CANCELLED"
+              ? "Pedido de donantes cerrado"
+              : "Se necesitan donantes de sangre"}
         </p>
         <h1 className="mt-2 text-3xl leading-tight text-text-on-brand wrap-anywhere">
           <span className="block text-base font-normal text-navy-200">Para</span>

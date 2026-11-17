@@ -22,6 +22,7 @@ import { urlCampania } from "@/lib/sitio";
 import { textoParaCompartir } from "@/lib/texto-compartir";
 import { descargarArchivo } from "@/lib/descargar";
 import { copiarTexto } from "@/lib/copiar";
+import { compartirPlaca, puedeCompartirArchivos } from "@/lib/compartir";
 import { useAvisos } from "@/components/ui/avisos";
 import { TarjetaPlaca } from "./tarjeta-placa";
 import { SelectorFormato } from "./selector-formato";
@@ -39,6 +40,12 @@ import { DescargaZip } from "./descarga-zip";
      US-08  descarga completa en ZIP
      US-09  copiar el texto
    y el "Corregir datos" de US-10.
+
+   COMPARTIR: en el celular, cada placa tiene un botón "Compartir" que abre
+   el menú nativo con la placa y el texto (lib/compartir.ts). Compartir
+   cuenta como llevarse esa placa: guarda la campaña y registra el formato,
+   igual que una descarga. Si la persona cierra el menú sin elegir una app,
+   no se registra nada.
 
    CUÁNDO SE CONFIRMA LA CAMPAÑA
    En el backend, guardar las placas confirma la campaña (DRAFT -> ACTIVE).
@@ -89,6 +96,9 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
   const [formato, setFormato] = useState<FormatoPlaca>("1x1");
   const [ampliado, setAmpliado] = useState<FormatoPlaca | null>(null);
   const [enlaceCopiado, setEnlaceCopiado] = useState(false);
+  // Se pregunta una vez. Esta pantalla solo existe en el navegador (aparece
+  // después de enviar el formulario), así que `navigator` ya está.
+  const [puedeCompartir] = useState(puedeCompartirArchivos);
   const relojEnlace = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titulo = useRef<HTMLHeadingElement>(null);
 
@@ -197,6 +207,18 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
     relojEnlace.current = setTimeout(() => setEnlaceCopiado(false), 2000);
   }
 
+  function compartir(f: FormatoPlaca) {
+    const blob = blobs[f];
+    if (!blob) return;
+    // Sin await antes de compartirPlaca: Safari exige que el menú se abra
+    // directo desde el toque (ver lib/compartir.ts).
+    void compartirPlaca(blob, nombreArchivo(datos, f), texto).then((r) => {
+      if (r === "compartido") registrar([f]);
+      else if (r === "error" || r === "no-soportado")
+        avisar("No pudimos abrir el menú para compartir. Descargá la placa y mandala desde la galería.", "error");
+    });
+  }
+
   function descargar(f: FormatoPlaca) {
     const blob = blobs[f];
     if (!blob) return;
@@ -222,6 +244,7 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
       descripcion={descripcion(f)}
       alAmpliar={() => setAmpliado(f)}
       alDescargar={() => descargar(f)}
+      alCompartir={puedeCompartir ? () => compartir(f) : undefined}
     />
   );
 

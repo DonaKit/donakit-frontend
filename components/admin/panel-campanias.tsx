@@ -125,6 +125,32 @@ export function PanelCampanias() {
     setAccionEnCurso(null);
   }
 
+  // Manejo de −1 donante: corrige un "+1" tocado de más. El backend no acepta
+  // incrementos negativos, así que se fija el número exacto (actual − 1).
+  async function handleRestarDonante(c: CampaniaDashboard) {
+    const actuales = c.currentDonors ?? 0;
+    if (actuales <= 0) return;
+    const instId = c.institution?.id || INSTITUCION.id;
+    setAccionEnCurso(c.id);
+    const res = await actualizarCampaniaAdmin(instId, c.id, {
+      currentDonors: actuales - 1,
+    });
+
+    if (res.ok) {
+      setCampanias((prev) =>
+        prev.map((item) => (item.id === c.id ? res.datos : item)),
+      );
+      setMensajeExito(`Se descontó 1 donante de ${c.patientName}`);
+      setTimeout(() => setMensajeExito(null), 3500);
+    } else if (res.requiereLogin) {
+      router.replace("/login");
+      return;
+    } else {
+      alert(`Error al descontar donante: ${res.error}`);
+    }
+    setAccionEnCurso(null);
+  }
+
   // Manejo de cerrar/completar campaña
   async function handleCompletarCampania(c: CampaniaDashboard) {
     if (!confirm(`¿Marcar la campaña de ${c.patientName} como completada?`)) {
@@ -508,6 +534,20 @@ export function PanelCampanias() {
                         <Icon name="enlaceExterno" size={14} />
                         <span className="hidden sm:inline">Landing</span>
                       </Link>
+
+                      {/* Botón −1 donante: para corregir un +1 de más */}
+                      {c.status === "ACTIVE" && actuales > 0 && (
+                        <button
+                          onClick={() => handleRestarDonante(c)}
+                          disabled={accionEnCurso === c.id}
+                          className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold text-text-secondary hover:bg-ink-50 transition-colors cursor-pointer disabled:opacity-50"
+                          title="Descontar un donante (para corregir un +1 cargado de más)"
+                          aria-label={`Descontar un donante de ${c.patientName}`}
+                        >
+                          <Icon name="menos" size={14} />
+                          <span>1</span>
+                        </button>
+                      )}
 
                       {/* Botón rápido +1 donante */}
                       {c.status === "ACTIVE" && (

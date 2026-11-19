@@ -40,10 +40,14 @@ export function EstadoPedido({ c }: { c: CampaniaPublica }) {
   const meta = c.donantesObjetivo;
   const actuales = c.donantesActuales;
 
-  if (c.estado === "COMPLETED" || c.estado === "CANCELLED") {
+  if (c.estado === "COMPLETED" || c.estado === "CANCELLED" || c.estado === "EXPIRED") {
     return (
       <section aria-label="Estado del pedido">
-        <PedidoCerrado completado={c.estado === "COMPLETED"} meta={meta} actuales={actuales} />
+        <PedidoCerrado
+          estado={c.estado}
+          meta={meta}
+          actuales={actuales}
+        />
       </section>
     );
   }
@@ -59,29 +63,51 @@ export function EstadoPedido({ c }: { c: CampaniaPublica }) {
 }
 
 function PedidoCerrado({
-  completado,
+  estado,
   meta,
   actuales,
 }: {
-  completado: boolean;
+  estado: "COMPLETED" | "CANCELLED" | "EXPIRED" | "ACTIVE" | "DRAFT";
   meta: number | null;
   actuales: number;
 }) {
+  const completado = estado === "COMPLETED";
+  const metaAlcanzada = meta !== null && actuales >= meta;
+  const esExito = completado && (meta === null ? actuales > 0 : metaAlcanzada);
+
+  let titulo: string;
+  let mensaje: string;
+  let icono: "exito" | "info" = "info";
+
+  if (esExito) {
+    titulo = "Pedido completado";
+    mensaje = meta
+      ? `Se completó la meta de donantes (${meta} de ${meta}). ¡Muchas gracias a todas las personas que fueron a donar!`
+      : `Se consiguieron ${actuales} donantes. ¡Muchas gracias a todas las personas que fueron a donar!`;
+    icono = "exito";
+  } else if (estado === "EXPIRED") {
+    titulo = "Plazo de donación vencido";
+    mensaje = meta && actuales > 0
+      ? `Finalizó el plazo establecido para este pedido (se registraron ${actuales} de ${meta} donantes asistidos).`
+      : "Finalizó el plazo establecido para este pedido.";
+  } else {
+    titulo = "Este pedido ya no está activo";
+    mensaje = meta && actuales > 0
+      ? `El banco de sangre cerró este pedido (se registraron ${actuales} de ${meta} donantes).`
+      : "El banco de sangre cerró este pedido.";
+  }
+
   return (
     <div
       role="status"
-      className={`rounded-xl p-4 ring-1 ${completado ? "bg-success-bg ring-success" : "bg-surface-muted ring-border"}`}
+      className={`rounded-xl p-4 ring-1 ${esExito ? "bg-success-bg ring-success" : "bg-surface-muted ring-border"}`}
     >
-      <p className={`flex items-center gap-2 text-lg font-semibold ${completado ? "text-success" : "text-text-primary"}`}>
-        <Icon name={completado ? "exito" : "info"} size={22} />
-        {completado ? "Pedido completado" : "Este pedido ya no está activo"}
+      <p className={`flex items-center gap-2 text-lg font-semibold ${esExito ? "text-success" : "text-text-primary"}`}>
+        <Icon name={icono} size={22} />
+        {titulo}
       </p>
       <p className="mt-2 text-base leading-relaxed text-text-primary">
-        {completado
-          ? meta && actuales > 0
-            ? `Se consiguieron ${actuales} de ${meta} donantes. Gracias a todas las personas que fueron a donar.`
-            : "Se consiguieron los donantes. Gracias a todas las personas que fueron a donar."
-          : "El banco de sangre cerró este pedido."}
+        {mensaje}
       </p>
       <p className="mt-2 text-sm text-text-secondary">
         Si querés donar igual, la sangre siempre hace falta: podés ir al banco de

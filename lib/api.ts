@@ -629,6 +629,13 @@ export interface CampaniaDashboard {
   } | null;
 }
 
+export interface ResumenDashboard {
+  totalCampanias?: number;
+  activas?: number;
+  totalVisitas?: number;
+  donantesConseguidos?: number;
+}
+
 export interface FiltrosDashboard {
   status?: string;
   institutionId?: string;
@@ -747,7 +754,7 @@ async function fetchBackendAdmin(
  */
 export async function obtenerCampaniasDashboard(
   filtros?: FiltrosDashboard,
-): Promise<Respuesta<{ campanias: CampaniaDashboard[]; total: number }>> {
+): Promise<Respuesta<{ campanias: CampaniaDashboard[]; total: number; summary?: ResumenDashboard | null }>> {
   const corte = new AbortController();
   const reloj = setTimeout(() => corte.abort(), ESPERA_MAXIMA_MS);
 
@@ -818,6 +825,7 @@ export async function obtenerCampaniasDashboard(
       datos: {
         campanias: data,
         total: sobre.total ?? data.length,
+        summary: sobre.summary ?? null,
       },
     };
   } catch (e) {
@@ -843,6 +851,8 @@ export async function actualizarCampaniaAdmin(
   cambios: {
     currentDonors?: number;
     incrementDonors?: number;
+    decrementDonors?: number;
+    deadline?: string;
     status?: EstadoCampania;
     observations?: string;
   },

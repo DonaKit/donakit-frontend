@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icons";
 import {
+  activarCampania,
   guardarPlacas,
   registrarDescarga,
   type CampaniaCreada,
@@ -116,14 +117,14 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
       datos.grupo ?? "de cualquier grupo"
     } para ${datos.nombre}, con código QR a la página del caso.`;
 
-  // Al llegar a este paso, el foco va al título: quien usa lector de pantalla
-  // se entera de que cambió la pantalla, y nadie queda a mitad de la página.
+  // Al llegar a este paso, el foco va al título y se confirma la campaña como activa
   useEffect(() => {
     titulo.current?.focus();
+    void activarCampania(campania);
     return () => {
       if (relojEnlace.current) clearTimeout(relojEnlace.current);
     };
-  }, []);
+  }, [campania]);
 
   // ------------------------------------------------------------ Generación
   useEffect(() => {
@@ -184,6 +185,13 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
     }
     return true;
   }
+
+  // Guardado automático en segundo plano apenas se generan ambas placas
+  useEffect(() => {
+    if (blobs["1x1"] && blobs["9x16"]) {
+      void asegurarGuardado();
+    }
+  }, [blobs]);
 
   /** Guardar (si hace falta) y registrar. Nunca bloquea la descarga. */
   function registrar(formatos: FormatoPlaca[], opciones: { zip?: boolean } = {}) {

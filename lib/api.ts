@@ -854,6 +854,7 @@ export async function actualizarCampaniaAdmin(
     currentDonors?: number;
     incrementDonors?: number;
     decrementDonors?: number;
+    targetDonors?: number | null;
     deadline?: string;
     status?: EstadoCampania;
     observations?: string;

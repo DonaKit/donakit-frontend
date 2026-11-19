@@ -66,8 +66,20 @@ export function PanelCampanias() {
   // Modal para reabrir campaña (vencida o completada)
   const [campaniaAReabrir, setCampaniaAReabrir] = useState<CampaniaDashboard | null>(null);
   const [nuevaFecha, setNuevaFecha] = useState("");
+  const [nuevaMeta, setNuevaMeta] = useState("");
   const [guardandoReapertura, setGuardandoReapertura] = useState(false);
   const [errorReapertura, setErrorReapertura] = useState<string | null>(null);
+
+  // Modal para modificar cantidad de donantes y meta en campañas activas
+  const [campaniaAEditarDonantes, setCampaniaAEditarDonantes] = useState<CampaniaDashboard | null>(null);
+  const [editCurrentDonors, setEditCurrentDonors] = useState<number>(0);
+  const [editTargetDonors, setEditTargetDonors] = useState<string>("");
+  const [guardandoDonantes, setGuardandoDonantes] = useState(false);
+  const [errorDonantes, setErrorDonantes] = useState<string | null>(null);
+
+  // Paginación en cliente
+  const ELEMENTOS_POR_PAGINA = 30;
+  const [paginaActual, setPaginaActual] = useState(1);
 
   // Métricas globales acumuladas para los 4 KPIs superiores
   const [metricasGlobales, setMetricasGlobales] = useState<{
@@ -174,10 +186,22 @@ export function PanelCampanias() {
     setAccionEnCurso(null);
   }
 
-  // Manejo de −1 donante: aplica decremento atómico seguro
+  // Manejo de −1 donante: aplica decremento atómico seguro (solo campañas activas)
   async function handleRestarDonante(c: CampaniaDashboard) {
     const actuales = c.currentDonors ?? 0;
     if (actuales <= 0) return;
+
+    if (
+      c.status === "COMPLETED" &&
+      c.targetDonors !== null &&
+      actuales >= c.targetDonors
+    ) {
+      alert(
+        "No está permitido restar donantes en una campaña completada con meta alcanzada. Debe reabrir la campaña primero.",
+      );
+      return;
+    }
+
     const instId = c.institution?.id || INSTITUCION.id;
     setAccionEnCurso(c.id);
 
@@ -206,6 +230,74 @@ export function PanelCampanias() {
       alert(`Error al descontar donante: ${res.error}`);
     }
     setAccionEnCurso(null);
+  }
+
+  // Apertura del modal para modificar cantidad de donantes y meta (campañas activas)
+  function abrirModalDonantes(c: CampaniaDashboard) {
+    setErrorDonantes(null);
+    setCampaniaAEditarDonantes(c);
+    setEditCurrentDonors(c.currentDonors ?? 0);
+    setEditTargetDonors(
+      c.targetDonors !== null && c.targetDonors !== undefined
+        ? String(c.targetDonors)
+        : "",
+    );
+  }
+
+  // Guardado de cantidad de donantes y meta
+  async function handleGuardarDonantes() {
+    if (!campaniaAEditarDonantes) return;
+    setErrorDonantes(null);
+
+    const currentParsed = Number(editCurrentDonors);
+    if (
+      Number.isNaN(currentParsed) ||
+      currentParsed < 0 ||
+      !Number.isInteger(currentParsed)
+    ) {
+      setErrorDonantes(
+        "La cantidad de donantes conseguidos debe ser un número entero mayor o igual a 0.",
+      );
+      return;
+    }
+
+    let targetParsed: number | null = null;
+    if (editTargetDonors.trim() !== "") {
+      const t = Number(editTargetDonors);
+      if (Number.isNaN(t) || t < 1 || !Number.isInteger(t)) {
+        setErrorDonantes(
+          "La meta de donantes debe ser un número entero mayor o igual a 1 (o dejarse vacía si es sin límite).",
+        );
+        return;
+      }
+      targetParsed = t;
+    }
+
+    setGuardandoDonantes(true);
+    const instId = campaniaAEditarDonantes.institution?.id || INSTITUCION.id;
+    const res = await actualizarCampaniaAdmin(instId, campaniaAEditarDonantes.id, {
+      currentDonors: currentParsed,
+      targetDonors: targetParsed,
+    });
+
+    if (res.ok) {
+      setCampanias((prev) =>
+        prev.map((item) =>
+          item.id === campaniaAEditarDonantes.id ? res.datos : item,
+        ),
+      );
+      setMensajeExito(
+        `Donantes actualizados para ${campaniaAEditarDonantes.patientName}.`,
+      );
+      setTimeout(() => setMensajeExito(null), 3500);
+      setCampaniaAEditarDonantes(null);
+    } else if (res.requiereLogin) {
+      router.replace("/login");
+      return;
+    } else {
+      setErrorDonantes(res.error);
+    }
+    setGuardandoDonantes(false);
   }
 
   // Manejo de cerrar/completar campaña
@@ -264,7 +356,7 @@ export function PanelCampanias() {
     setAccionEnCurso(null);
   }
 
-  // Apertura del modal de reapertura
+  // Apertura del modal de reapertura (vencidas, completadas o canceladas)
   function abrirModalReapertura(c: CampaniaDashboard) {
     setErrorReapertura(null);
     setCampaniaAReabrir(c);
@@ -272,25 +364,82 @@ export function PanelCampanias() {
     const fechaDefecto = new Date();
     fechaDefecto.setDate(fechaDefecto.getDate() + 15);
     setNuevaFecha(fechaDefecto.toISOString().split("T")[0]);
+
+    // Si la campaña ya alcanzó su meta, sugerir ampliación (+5 donantes)
+    const metaAlcanzada =
+      c.targetDonors !== null && (c.currentDonors ?? 0) >= c.targetDonors;
+    if (metaAlcanzada) {
+      setNuevaMeta(String((c.currentDonors ?? c.targetDonors ?? 0) + 5));
+    } else {
+      setNuevaMeta(
+        c.targetDonors !== null && c.targetDonors !== undefined
+          ? String(c.targetDonors)
+          : "",
+      );
+    }
   }
 
-  // Confirmación de reapertura
+  // Confirmación de reapertura con reactivación y actualización de meta si correspondía
   async function handleConfirmarReapertura() {
     if (!campaniaAReabrir || !nuevaFecha) return;
-    setGuardandoReapertura(true);
     setErrorReapertura(null);
+
+    const actuales = campaniaAReabrir.currentDonors ?? 0;
+    const metaAlcanzadaPrevia =
+      campaniaAReabrir.targetDonors !== null &&
+      actuales >= campaniaAReabrir.targetDonors;
+
+    let metaParaEnviar: number | null | undefined = undefined;
+
+    if (nuevaMeta.trim() !== "") {
+      const parsed = Number(nuevaMeta);
+      if (Number.isNaN(parsed) || parsed < 1 || !Number.isInteger(parsed)) {
+        setErrorReapertura("La meta debe ser un número entero mayor a 0.");
+        return;
+      }
+      if (metaAlcanzadaPrevia && parsed <= actuales) {
+        setErrorReapertura(
+          `Para reactivar la campaña, la nueva meta debe ser mayor a los donantes ya conseguidos (${actuales}) o dejarse vacía para pasar a sin límite.`,
+        );
+        return;
+      }
+      metaParaEnviar = parsed;
+    } else if (metaAlcanzadaPrevia) {
+      // Si se deja vacía al reactivar una con meta alcanzada, pasa a ser sin límite
+      metaParaEnviar = null;
+    }
+
+    setGuardandoReapertura(true);
     const instId = campaniaAReabrir.institution?.id || INSTITUCION.id;
 
-    const res = await actualizarCampaniaAdmin(instId, campaniaAReabrir.id, {
+    const payload: {
+      deadline: string;
+      status: EstadoCampania;
+      targetDonors?: number | null;
+    } = {
       deadline: nuevaFecha,
       status: "ACTIVE",
-    });
+    };
+
+    if (metaParaEnviar !== undefined) {
+      payload.targetDonors = metaParaEnviar;
+    }
+
+    const res = await actualizarCampaniaAdmin(
+      instId,
+      campaniaAReabrir.id,
+      payload,
+    );
 
     if (res.ok) {
       setCampanias((prev) =>
-        prev.map((item) => (item.id === campaniaAReabrir.id ? res.datos : item)),
+        prev.map((item) =>
+          item.id === campaniaAReabrir.id ? res.datos : item,
+        ),
       );
-      setMensajeExito(`Campaña de ${campaniaAReabrir.patientName} reabierta como Activa.`);
+      setMensajeExito(
+        `Campaña de ${campaniaAReabrir.patientName} reabierta como Activa.`,
+      );
       setTimeout(() => setMensajeExito(null), 3500);
       setCampaniaAReabrir(null);
     } else if (res.requiereLogin) {
@@ -334,6 +483,14 @@ export function PanelCampanias() {
 
     return lista;
   }, [campanias, busqueda, orden]);
+
+  // Paginación en cliente
+  const totalPaginas = Math.ceil(campaniasFiltradas.length / ELEMENTOS_POR_PAGINA) || 1;
+  const paginaValida = Math.min(Math.max(1, paginaActual), totalPaginas);
+  const campaniasPaginadas = useMemo(() => {
+    const inicio = (paginaValida - 1) * ELEMENTOS_POR_PAGINA;
+    return campaniasFiltradas.slice(inicio, inicio + ELEMENTOS_POR_PAGINA);
+  }, [campaniasFiltradas, paginaValida, ELEMENTOS_POR_PAGINA]);
 
   // Métricas acumuladas globales (utiliza totales institucionales para que no cambien por pestaña)
   const kpis = useMemo(() => {
@@ -423,6 +580,7 @@ export function PanelCampanias() {
                 onClick={() => {
                   setCargando(true);
                   setEstadoSeleccionado(tab.id);
+                  setPaginaActual(1);
                 }}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
                   estadoSeleccionado === tab.id
@@ -460,7 +618,10 @@ export function PanelCampanias() {
             <input
               type="search"
               value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
+              onChange={(e) => {
+                setBusqueda(e.target.value);
+                setPaginaActual(1);
+              }}
               placeholder="Buscar por paciente, slug o grupo (ej. A+, Garrahan)..."
               className="w-full rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-navy-500 focus:outline-none focus:ring-1 focus:ring-navy-500"
             />
@@ -474,7 +635,10 @@ export function PanelCampanias() {
             <select
               id="ordenar"
               value={orden}
-              onChange={(e) => setOrden(e.target.value as Orden)}
+              onChange={(e) => {
+                setOrden(e.target.value as Orden);
+                setPaginaActual(1);
+              }}
               className="rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-text-primary focus:border-navy-500 focus:outline-none cursor-pointer"
             >
               <option value="recientes">Más recientes</option>
@@ -532,11 +696,13 @@ export function PanelCampanias() {
       {!cargando && !error && campaniasFiltradas.length > 0 && (
         <div className="space-y-3">
           <p className="text-xs font-medium text-text-muted">
-            Mostrando {campaniasFiltradas.length} de {campanias.length} campañas
+            Mostrando {(paginaValida - 1) * ELEMENTOS_POR_PAGINA + 1} a{" "}
+            {Math.min(paginaValida * ELEMENTOS_POR_PAGINA, campaniasFiltradas.length)} de{" "}
+            {campaniasFiltradas.length} campañas
           </p>
 
           <div className="grid gap-3">
-            {campaniasFiltradas.map((c) => {
+            {campaniasPaginadas.map((c) => {
               const estado = ETIQUETAS_ESTADO[c.status] || {
                 texto: c.status,
                 clases: "bg-ink-100 text-ink-700",
@@ -627,9 +793,22 @@ export function PanelCampanias() {
                       <div className="min-w-[130px] sm:min-w-[150px]">
                         <div className="flex items-center justify-between text-xs mb-1">
                           <span className="font-medium text-text-secondary">Donantes</span>
-                          <span className="font-bold text-text-primary">
-                            {actuales} {meta ? `/ ${meta}` : ""}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-text-primary">
+                              {actuales} {meta ? `/ ${meta}` : ""}
+                            </span>
+                            {c.status === "ACTIVE" && (
+                              <button
+                                type="button"
+                                onClick={() => abrirModalDonantes(c)}
+                                className="p-0.5 rounded text-text-muted hover:text-navy-700 hover:bg-ink-100 transition-colors cursor-pointer"
+                                title="Modificar cantidad de donantes conseguidos o meta"
+                                aria-label={`Modificar donantes para ${c.patientName}`}
+                              >
+                                <Icon name="editar" size={13} />
+                              </button>
+                            )}
+                          </div>
                         </div>
                         {meta ? (
                           <div className="w-full h-2 rounded-full bg-ink-200 overflow-hidden">
@@ -660,8 +839,8 @@ export function PanelCampanias() {
                         <span className="hidden sm:inline">Landing</span>
                       </Link>
 
-                      {/* Botón −1 donante: para corregir un +1 de más (habilitado en Activas y Completadas) */}
-                      {(c.status === "ACTIVE" || c.status === "COMPLETED") && actuales > 0 && (
+                      {/* Botón −1 donante: únicamente en campañas activas (no permitido en completadas con meta alcanzada) */}
+                      {c.status === "ACTIVE" && actuales > 0 && (
                         <button
                           onClick={() => handleRestarDonante(c)}
                           disabled={accionEnCurso === c.id}
@@ -684,6 +863,20 @@ export function PanelCampanias() {
                         >
                           <Icon name="mas" size={14} />
                           <span>+1 Donante</span>
+                        </button>
+                      )}
+
+                      {/* Botón modificar donantes (campañas activas) */}
+                      {c.status === "ACTIVE" && (
+                        <button
+                          type="button"
+                          onClick={() => abrirModalDonantes(c)}
+                          disabled={accionEnCurso === c.id}
+                          className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold text-text-secondary hover:bg-ink-50 transition-colors cursor-pointer disabled:opacity-50"
+                          title="Modificar manualmente la cantidad de donantes conseguidos o la meta"
+                        >
+                          <Icon name="editar" size={14} />
+                          <span className="hidden lg:inline">Donantes</span>
                         </button>
                       )}
 
@@ -733,79 +926,259 @@ export function PanelCampanias() {
               );
             })}
           </div>
+
+          {/* Controles de Paginación */}
+          {campaniasFiltradas.length > ELEMENTOS_POR_PAGINA && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-border">
+              <p className="text-xs text-text-muted">
+                Mostrando {(paginaValida - 1) * ELEMENTOS_POR_PAGINA + 1} a{" "}
+                {Math.min(paginaValida * ELEMENTOS_POR_PAGINA, campaniasFiltradas.length)} de{" "}
+                {campaniasFiltradas.length} campañas
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaginaActual((p) => Math.max(1, p - 1))}
+                  disabled={paginaValida === 1}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text-secondary hover:bg-ink-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                >
+                  Anterior
+                </button>
+                <span className="text-xs font-medium text-text-secondary px-1">
+                  Página {paginaValida} de {totalPaginas}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPaginaActual((p) => Math.min(totalPaginas, p + 1))}
+                  disabled={paginaValida === totalPaginas}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text-secondary hover:bg-ink-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                >
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Modal de Reapertura de Campaña (BUG-04) */}
-      {campaniaAReabrir && (
+      {/* Modal de Modificación de Donantes (Campañas Activas) */}
+      {campaniaAEditarDonantes && (
         <Dialogo
-          abierto={Boolean(campaniaAReabrir)}
-          alCerrar={() => setCampaniaAReabrir(null)}
-          titulo="Reabrir campaña de donación"
+          abierto={Boolean(campaniaAEditarDonantes)}
+          alCerrar={() => setCampaniaAEditarDonantes(null)}
+          titulo="Modificar donantes de la campaña"
         >
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              void handleConfirmarReapertura();
+              void handleGuardarDonantes();
             }}
             className="space-y-4 pt-2"
           >
             <p className="text-sm text-text-secondary leading-relaxed">
-              Estás por reabrir la campaña de{" "}
+              Ajustá la cantidad de donantes confirmados y la meta de donantes requeridos para{" "}
               <strong className="text-text-primary font-semibold">
-                {campaniaAReabrir.patientName}
-              </strong>
-              . Pasará nuevamente a estado{" "}
-              <span className="font-semibold text-emerald-700">Activa</span> y
-              volverá a recibir donantes.
+                {campaniaAEditarDonantes.patientName}
+              </strong>.
             </p>
 
             <div className="space-y-1.5">
               <label
-                htmlFor="nueva-fecha"
+                htmlFor="donantes-conseguidos"
                 className="block text-xs font-semibold text-text-primary"
               >
-                Nueva fecha límite de donación
+                Donantes conseguidos actuales
               </label>
               <input
-                id="nueva-fecha"
-                type="date"
+                id="donantes-conseguidos"
+                type="number"
+                min={0}
+                max={1000}
+                step={1}
                 required
-                min={new Date().toISOString().split("T")[0]}
-                value={nuevaFecha}
-                onChange={(e) => setNuevaFecha(e.target.value)}
+                value={editCurrentDonors}
+                onChange={(e) =>
+                  setEditCurrentDonors(
+                    Math.max(0, parseInt(e.target.value, 10) || 0),
+                  )
+                }
                 className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-navy-500 focus:outline-none"
               />
               <p className="text-xs text-text-muted">
-                Elegí hasta qué día estará vigente esta nueva etapa.
+                Cantidad real de personas que asistieron al centro a donar.
               </p>
             </div>
 
-            {errorReapertura && (
+            <div className="space-y-1.5">
+              <label
+                htmlFor="meta-donantes"
+                className="block text-xs font-semibold text-text-primary"
+              >
+                Meta de donantes requeridos (opcional)
+              </label>
+              <input
+                id="meta-donantes"
+                type="number"
+                min={1}
+                max={1000}
+                step={1}
+                value={editTargetDonors}
+                onChange={(e) => setEditTargetDonors(e.target.value)}
+                placeholder="Ej: 10 (dejar vacío si es sin límite)"
+                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-navy-500 focus:outline-none"
+              />
+              <p className="text-xs text-text-muted">
+                Dejá este campo vacío si la campaña no tiene una meta fijada.
+              </p>
+            </div>
+
+            {editTargetDonors.trim() !== "" &&
+              Number(editCurrentDonors) >= Number(editTargetDonors) && (
+                <div className="rounded-lg bg-sky-50 border border-sky-200 p-2.5 text-xs text-sky-800">
+                  💡 <strong>Atención:</strong> Al ser la cantidad de donantes igual o mayor a la meta, la campaña se completará automáticamente al guardar.
+                </div>
+              )}
+
+            {errorDonantes && (
               <p role="alert" className="text-xs font-medium text-danger">
-                {errorReapertura}
+                {errorDonantes}
               </p>
             )}
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
               <button
                 type="button"
-                onClick={() => setCampaniaAReabrir(null)}
+                onClick={() => setCampaniaAEditarDonantes(null)}
                 className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-ink-100 transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                disabled={guardandoReapertura || !nuevaFecha}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors cursor-pointer disabled:opacity-50"
+                disabled={guardandoDonantes}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-navy-700 px-4 py-2 text-xs font-semibold text-white hover:bg-navy-800 transition-colors cursor-pointer disabled:opacity-50"
               >
-                {guardandoReapertura ? "Reabriendo…" : "Confirmar y Reabrir"}
+                {guardandoDonantes ? "Guardando…" : "Guardar cambios"}
               </button>
             </div>
           </form>
         </Dialogo>
       )}
+
+      {/* Modal de Reapertura de Campaña (BUG-04 / Ampliación de Meta) */}
+      {campaniaAReabrir && (() => {
+        const metaAlcanzada =
+          campaniaAReabrir.targetDonors !== null &&
+          (campaniaAReabrir.currentDonors ?? 0) >= campaniaAReabrir.targetDonors;
+
+        return (
+          <Dialogo
+            abierto={Boolean(campaniaAReabrir)}
+            alCerrar={() => setCampaniaAReabrir(null)}
+            titulo="Reabrir campaña de donación"
+          >
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleConfirmarReapertura();
+              }}
+              className="space-y-4 pt-2"
+            >
+              <p className="text-sm text-text-secondary leading-relaxed">
+                Estás por reabrir la campaña de{" "}
+                <strong className="text-text-primary font-semibold">
+                  {campaniaAReabrir.patientName}
+                </strong>
+                . Pasará nuevamente a estado{" "}
+                <span className="font-semibold text-emerald-700">Activa</span> y
+                volverá a recibir donantes.
+              </p>
+
+              {metaAlcanzada && (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 space-y-1">
+                  <p className="font-semibold flex items-center gap-1.5">
+                    <span>🎯</span> Meta previa alcanzada ({campaniaAReabrir.currentDonors ?? 0} de {campaniaAReabrir.targetDonors} donantes)
+                  </p>
+                  <p>
+                    Para que la campaña continúe activa y sume nuevos donantes, definí una nueva meta mayor a {campaniaAReabrir.currentDonors ?? 0} o dejala vacía para no tener límite fijo.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="nueva-fecha"
+                  className="block text-xs font-semibold text-text-primary"
+                >
+                  Nueva fecha límite de donación
+                </label>
+                <input
+                  id="nueva-fecha"
+                  type="date"
+                  required
+                  min={new Date().toISOString().split("T")[0]}
+                  value={nuevaFecha}
+                  onChange={(e) => setNuevaFecha(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-navy-500 focus:outline-none"
+                />
+                <p className="text-xs text-text-muted">
+                  Elegí hasta qué día estará vigente esta nueva etapa.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="nueva-meta"
+                  className="block text-xs font-semibold text-text-primary"
+                >
+                  Nueva meta de donantes {metaAlcanzada ? "(Requerida mayor a la actual)" : "(Opcional)"}
+                </label>
+                <input
+                  id="nueva-meta"
+                  type="number"
+                  min={metaAlcanzada ? (campaniaAReabrir.currentDonors ?? 0) + 1 : 1}
+                  max={1000}
+                  step={1}
+                  value={nuevaMeta}
+                  onChange={(e) => setNuevaMeta(e.target.value)}
+                  placeholder={
+                    metaAlcanzada
+                      ? `Mayor a ${campaniaAReabrir.currentDonors ?? 0}`
+                      : "Ej: 15 (o vacío para sin límite)"
+                  }
+                  className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-navy-500 focus:outline-none"
+                />
+                <p className="text-xs text-text-muted">
+                  Donantes ya asistidos: <strong className="text-text-primary">{campaniaAReabrir.currentDonors ?? 0}</strong>.
+                </p>
+              </div>
+
+              {errorReapertura && (
+                <p role="alert" className="text-xs font-medium text-danger">
+                  {errorReapertura}
+                </p>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setCampaniaAReabrir(null)}
+                  className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-ink-100 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardandoReapertura || !nuevaFecha}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {guardandoReapertura ? "Reabriendo…" : "Confirmar y Reabrir"}
+                </button>
+              </div>
+            </form>
+          </Dialogo>
+        );
+      })()}
     </div>
   );
 }

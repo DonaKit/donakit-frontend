@@ -234,6 +234,36 @@ export function PanelCampanias() {
     setAccionEnCurso(null);
   }
 
+  // Manejo de cancelar campaña
+  async function handleCancelarCampania(c: CampaniaDashboard) {
+    if (
+      !confirm(
+        `¿Estás seguro de que deseas cancelar la campaña de ${c.patientName}? Esta acción dará de baja la solicitud de donación.`,
+      )
+    ) {
+      return;
+    }
+    const instId = c.institution?.id || INSTITUCION.id;
+    setAccionEnCurso(c.id);
+    const res = await actualizarCampaniaAdmin(instId, c.id, {
+      status: "CANCELLED",
+    });
+
+    if (res.ok) {
+      setCampanias((prev) =>
+        prev.map((item) => (item.id === c.id ? res.datos : item)),
+      );
+      setMensajeExito(`Campaña de ${c.patientName} cancelada.`);
+      setTimeout(() => setMensajeExito(null), 3500);
+    } else if (res.requiereLogin) {
+      router.replace("/login");
+      return;
+    } else {
+      alert(`Error al cancelar la campaña: ${res.error}`);
+    }
+    setAccionEnCurso(null);
+  }
+
   // Apertura del modal de reapertura
   function abrirModalReapertura(c: CampaniaDashboard) {
     setErrorReapertura(null);
@@ -670,8 +700,23 @@ export function PanelCampanias() {
                         </button>
                       )}
 
-                      {/* Botón Reabrir campaña (para vencidas o completadas) */}
-                      {(c.status === "EXPIRED" || c.status === "COMPLETED") && (
+                      {/* Botón cancelar campaña */}
+                      {(c.status === "ACTIVE" || c.status === "DRAFT") && (
+                        <button
+                          onClick={() => handleCancelarCampania(c)}
+                          disabled={accionEnCurso === c.id}
+                          className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-800 hover:bg-rose-100 transition-colors cursor-pointer disabled:opacity-50"
+                          title="Cancelar la campaña de donación"
+                        >
+                          <Icon name="cancelar" size={14} />
+                          <span className="hidden md:inline">Cancelar</span>
+                        </button>
+                      )}
+
+                      {/* Botón Reabrir campaña (para vencidas, completadas o canceladas) */}
+                      {(c.status === "EXPIRED" ||
+                        c.status === "COMPLETED" ||
+                        c.status === "CANCELLED") && (
                         <button
                           onClick={() => abrirModalReapertura(c)}
                           disabled={accionEnCurso === c.id}

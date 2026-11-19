@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   ArrowLeft,
+  Ban,
   CalendarCheck,
   Check,
   ChevronDown,
@@ -96,6 +97,7 @@ export const icons = {
   menos: Minus,
   filtro: Filter,
   recargar: RefreshCw,
+  cancelar: Ban,
 
   // --- Landing del donante (Sprint 4)
   turno: CalendarCheck,

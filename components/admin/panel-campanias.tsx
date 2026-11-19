@@ -78,7 +78,7 @@ export function PanelCampanias() {
   const [errorDonantes, setErrorDonantes] = useState<string | null>(null);
 
   // Paginación en cliente
-  const ELEMENTOS_POR_PAGINA = 8;
+  const ELEMENTOS_POR_PAGINA = 30;
   const [paginaActual, setPaginaActual] = useState(1);
 
   // Métricas globales acumuladas para los 4 KPIs superiores

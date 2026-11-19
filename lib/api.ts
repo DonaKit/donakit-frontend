@@ -288,7 +288,9 @@ export function registrarDescarga(
  * (deadline, targetDonors, observations), por lo que toda corrección se
  * realiza directamente con PATCH sobre la misma campaña existente.
  */
-export function corregibleConPatch(_anterior: DatosPedido, _nuevo: DatosPedido): boolean {
+export function corregibleConPatch(anterior: DatosPedido, nuevo: DatosPedido): boolean {
+  void anterior;
+  void nuevo;
   return true;
 }
 

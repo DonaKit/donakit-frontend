@@ -191,6 +191,7 @@ export function PantallaResultado({ campania, pedido, alCorregir }: Props) {
     if (blobs["1x1"] && blobs["9x16"]) {
       void asegurarGuardado();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blobs]);
 
   /** Guardar (si hace falta) y registrar. Nunca bloquea la descarga. */

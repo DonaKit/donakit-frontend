@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
+import { DetectorInactividad } from "@/components/dashboard/detector-inactividad";
 import { PanelCampanias } from "@/components/dashboard/panel-campanias";
 import { isAdminEmail } from "@/lib/admin-auth";
 import { INSTITUCION } from "@/lib/institucion";
@@ -96,6 +97,7 @@ async function PanelDashboardProtegido() {
 export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-ink-50 flex flex-col">
+      <DetectorInactividad />
       <Suspense
         fallback={
           <header className="h-16 border-b border-border bg-surface animate-pulse" />

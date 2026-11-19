@@ -26,7 +26,9 @@ async function LoginForm({ searchParams }: { searchParams: Promise<{ error?: str
         <div className="mb-6 p-3.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 text-center">
           {error === "AccessDenied"
             ? "Acceso denegado: debe pertenecer a la organización."
-            : "Ocurrió un error al intentar iniciar sesión. Por favor intenta de nuevo."}
+            : error === "SessionExpired"
+              ? "Tu sesión expiró tras 5 minutos de inactividad. Por favor volvé a iniciar sesión."
+              : "Ocurrió un error al intentar iniciar sesión. Por favor intenta de nuevo."}
         </div>
       )}
 

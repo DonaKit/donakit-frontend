@@ -284,25 +284,61 @@ export function registrarDescarga(
 /**
  * ¿Se puede corregir con PATCH, o hace falta una campaña nueva?
  *
- * El PATCH del backend hoy NO permite borrar un dato opcional: si se manda
- * vacío o null, lo ignora y la base se queda con el valor viejo. Entonces, si
- * la corrección consiste en QUITAR la fecha, la cantidad o las observaciones,
- * el PATCH dejaría la landing mostrando un dato que la persona sacó. En ese
- * caso se crea una campaña nueva, como antes.
- * PENDIENTE (backend): aceptar null en UpdateCampaignDto para limpiar campos.
+ * El backend acepta null en UpdateCampaignDto para limpiar campos opcionales
+ * (deadline, targetDonors, observations), por lo que toda corrección se
+ * realiza directamente con PATCH sobre la misma campaña existente.
  */
 export function corregibleConPatch(anterior: DatosPedido, nuevo: DatosPedido): boolean {
-  const quitado = (a: string, b: string) => a.trim() !== "" && b.trim() === "";
-  return !(
-    quitado(anterior.fecha, nuevo.fecha) ||
-    quitado(anterior.donantes, nuevo.donantes) ||
-    quitado(anterior.observaciones, nuevo.observaciones)
-  );
+  void anterior;
+  void nuevo;
+  return true;
 }
 
 /** Si el nombre cambia, el backend genera un slug nuevo: el enlace cambia. */
 export function cambiaElEnlace(anterior: DatosPedido, nuevo: DatosPedido): boolean {
   return anterior.nombre.trim() !== nuevo.nombre.trim();
+}
+
+/**
+ * PATCH /campaigns/:id con status: "ACTIVE".
+ * Confirma la campaña directamente como activa para que aparezca de inmediato en el dashboard.
+ */
+export async function activarCampania(
+  campania: CampaniaCreada,
+): Promise<Respuesta<CampaniaCreada>> {
+  const corte = new AbortController();
+  const reloj = setTimeout(() => corte.abort(), ESPERA_MAXIMA_MS);
+  try {
+    const r = await fetch(`${BASE}/campaigns/${campania.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ editToken: campania.editToken, status: "ACTIVE" }),
+      signal: corte.signal,
+    });
+    if (!r.ok) {
+      return { ok: false, error: await mensajeDeError(r, "No pudimos activar la campaña.") };
+    }
+    const c = (await r.json()).data;
+    return {
+      ok: true,
+      datos: {
+        id: c.id ?? campania.id,
+        slug: c.slug ?? campania.slug,
+        editToken: c.editToken ?? campania.editToken,
+        textoGenerado: c.generatedCopy ?? campania.textoGenerado ?? null,
+      },
+    };
+  } catch (e) {
+    const porTiempo = e instanceof DOMException && e.name === "AbortError";
+    return {
+      ok: false,
+      error: porTiempo
+        ? "El servidor tardó demasiado en activar la campaña."
+        : "No pudimos conectar con el servidor para activar la campaña.",
+    };
+  } finally {
+    clearTimeout(reloj);
+  }
 }
 
 /**
@@ -322,7 +358,7 @@ export async function actualizarCampania(
       // El texto para compartir no va acá: si cambia el nombre, cambia el
       // slug y con él el enlace del texto. Se manda después, junto con las
       // placas, cuando ya se conoce el enlace definitivo.
-      body: JSON.stringify({ editToken: campania.editToken, ...aCuerpoDePeticion(d) }),
+      body: JSON.stringify({ editToken: campania.editToken, status: "ACTIVE", ...aCuerpoDePeticion(d) }),
       signal: corte.signal,
     });
     if (!r.ok) {
@@ -595,6 +631,13 @@ export interface CampaniaDashboard {
   } | null;
 }
 
+export interface ResumenDashboard {
+  totalCampanias?: number;
+  activas?: number;
+  totalVisitas?: number;
+  donantesConseguidos?: number;
+}
+
 export interface FiltrosDashboard {
   status?: string;
   institutionId?: string;
@@ -713,7 +756,7 @@ async function fetchBackendAdmin(
  */
 export async function obtenerCampaniasDashboard(
   filtros?: FiltrosDashboard,
-): Promise<Respuesta<{ campanias: CampaniaDashboard[]; total: number }>> {
+): Promise<Respuesta<{ campanias: CampaniaDashboard[]; total: number; summary?: ResumenDashboard | null }>> {
   const corte = new AbortController();
   const reloj = setTimeout(() => corte.abort(), ESPERA_MAXIMA_MS);
 
@@ -784,6 +827,7 @@ export async function obtenerCampaniasDashboard(
       datos: {
         campanias: data,
         total: sobre.total ?? data.length,
+        summary: sobre.summary ?? null,
       },
     };
   } catch (e) {
@@ -809,6 +853,8 @@ export async function actualizarCampaniaAdmin(
   cambios: {
     currentDonors?: number;
     incrementDonors?: number;
+    decrementDonors?: number;
+    deadline?: string;
     status?: EstadoCampania;
     observations?: string;
   },

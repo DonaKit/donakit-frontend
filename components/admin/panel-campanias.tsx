@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icons";
+import { Dialogo } from "@/components/ui/dialogo";
 import {
   obtenerCampaniasDashboard,
   actualizarCampaniaAdmin,
@@ -21,7 +22,7 @@ import { diasHasta, fechaCorta } from "@/lib/fechas";
    de avance), junto con filtros y acciones administrativas rápidas.
    ========================================================================== */
 
-type FiltroEstado = "ALL" | EstadoCampania;
+type FiltroEstado = "ACTIVE" | "COMPLETED" | "EXPIRED" | "CANCELLED" | "ALL";
 type Orden = "recientes" | "visitas" | "donantes" | "urgencia";
 
 const ETIQUETAS_ESTADO: Record<EstadoCampania, { texto: string; clases: string }> = {
@@ -53,8 +54,8 @@ export function PanelCampanias() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filtros y búsqueda
-  const [estadoSeleccionado, setEstadoSeleccionado] = useState<FiltroEstado>("ALL");
+  // Filtros y búsqueda (Activas por defecto)
+  const [estadoSeleccionado, setEstadoSeleccionado] = useState<FiltroEstado>("ACTIVE");
   const [busqueda, setBusqueda] = useState("");
   const [orden, setOrden] = useState<Orden>("recientes");
 
@@ -62,14 +63,36 @@ export function PanelCampanias() {
   const [accionEnCurso, setAccionEnCurso] = useState<string | null>(null);
   const [mensajeExito, setMensajeExito] = useState<string | null>(null);
 
+  // Modal para reabrir campaña (vencida o completada)
+  const [campaniaAReabrir, setCampaniaAReabrir] = useState<CampaniaDashboard | null>(null);
+  const [nuevaFecha, setNuevaFecha] = useState("");
+  const [guardandoReapertura, setGuardandoReapertura] = useState(false);
+  const [errorReapertura, setErrorReapertura] = useState<string | null>(null);
+
+  // Métricas globales acumuladas para los 4 KPIs superiores
+  const [metricasGlobales, setMetricasGlobales] = useState<{
+    totalCampanias: number;
+    activas: number;
+    totalVisitas: number;
+    donantesConseguidos: number;
+  } | null>(null);
+
   const recargar = useCallback(async () => {
     setCargando(true);
     setError(null);
     const res = await obtenerCampaniasDashboard({
-      status: estadoSeleccionado === "ALL" ? undefined : estadoSeleccionado,
+      status: estadoSeleccionado,
     });
     if (res.ok) {
       setCampanias(res.datos.campanias);
+      if (res.datos.summary) {
+        setMetricasGlobales({
+          totalCampanias: res.datos.summary.totalCampanias ?? res.datos.total,
+          activas: res.datos.summary.activas ?? 0,
+          totalVisitas: res.datos.summary.totalVisitas ?? 0,
+          donantesConseguidos: res.datos.summary.donantesConseguidos ?? 0,
+        });
+      }
     } else if (res.requiereLogin) {
       router.replace("/login");
       return;
@@ -79,15 +102,24 @@ export function PanelCampanias() {
     setCargando(false);
   }, [estadoSeleccionado, router]);
 
+  // Consulta inicial de campañas para la pestaña seleccionada
   useEffect(() => {
     let montado = true;
 
     void obtenerCampaniasDashboard({
-      status: estadoSeleccionado === "ALL" ? undefined : estadoSeleccionado,
+      status: estadoSeleccionado,
     }).then((res) => {
       if (!montado) return;
       if (res.ok) {
         setCampanias(res.datos.campanias);
+        if (res.datos.summary) {
+          setMetricasGlobales({
+            totalCampanias: res.datos.summary.totalCampanias ?? res.datos.total,
+            activas: res.datos.summary.activas ?? 0,
+            totalVisitas: res.datos.summary.totalVisitas ?? 0,
+            donantesConseguidos: res.datos.summary.donantesConseguidos ?? 0,
+          });
+        }
       } else if (res.requiereLogin) {
         router.replace("/login");
         return;
@@ -101,6 +133,23 @@ export function PanelCampanias() {
       montado = false;
     };
   }, [estadoSeleccionado, router]);
+
+  // Cálculo de KPIs globales para la institución (no varían por pestaña)
+  useEffect(() => {
+    if (!metricasGlobales) {
+      void obtenerCampaniasDashboard({ status: "ALL" }).then((r) => {
+        if (r.ok) {
+          const list = r.datos.campanias;
+          setMetricasGlobales({
+            totalCampanias: r.datos.summary?.totalCampanias ?? r.datos.total ?? list.length,
+            activas: r.datos.summary?.activas ?? list.filter((c) => c.status === "ACTIVE").length,
+            totalVisitas: r.datos.summary?.totalVisitas ?? list.reduce((acc, c) => acc + (c.totalVisits || 0), 0),
+            donantesConseguidos: r.datos.summary?.donantesConseguidos ?? list.reduce((acc, c) => acc + (c.currentDonors || 0), 0),
+          });
+        }
+      });
+    }
+  }, [metricasGlobales]);
 
   // Manejo de +1 Donante
   async function handleSumarDonante(c: CampaniaDashboard) {
@@ -125,16 +174,24 @@ export function PanelCampanias() {
     setAccionEnCurso(null);
   }
 
-  // Manejo de −1 donante: corrige un "+1" tocado de más. El backend no acepta
-  // incrementos negativos, así que se fija el número exacto (actual − 1).
+  // Manejo de −1 donante: aplica decremento atómico seguro
   async function handleRestarDonante(c: CampaniaDashboard) {
     const actuales = c.currentDonors ?? 0;
     if (actuales <= 0) return;
     const instId = c.institution?.id || INSTITUCION.id;
     setAccionEnCurso(c.id);
-    const res = await actualizarCampaniaAdmin(instId, c.id, {
-      currentDonors: actuales - 1,
+
+    // Intenta decremento atómico primero
+    let res = await actualizarCampaniaAdmin(instId, c.id, {
+      incrementDonors: -1,
     });
+
+    // Fallback de compatibilidad si el backend aún no desplegó el soporte a incrementDonors negativo
+    if (!res.ok) {
+      res = await actualizarCampaniaAdmin(instId, c.id, {
+        currentDonors: Math.max(0, actuales - 1),
+      });
+    }
 
     if (res.ok) {
       setCampanias((prev) =>
@@ -177,6 +234,44 @@ export function PanelCampanias() {
     setAccionEnCurso(null);
   }
 
+  // Apertura del modal de reapertura
+  function abrirModalReapertura(c: CampaniaDashboard) {
+    setErrorReapertura(null);
+    setCampaniaAReabrir(c);
+    // Sugerir fecha límite por defecto a 15 días desde hoy
+    const fechaDefecto = new Date();
+    fechaDefecto.setDate(fechaDefecto.getDate() + 15);
+    setNuevaFecha(fechaDefecto.toISOString().split("T")[0]);
+  }
+
+  // Confirmación de reapertura
+  async function handleConfirmarReapertura() {
+    if (!campaniaAReabrir || !nuevaFecha) return;
+    setGuardandoReapertura(true);
+    setErrorReapertura(null);
+    const instId = campaniaAReabrir.institution?.id || INSTITUCION.id;
+
+    const res = await actualizarCampaniaAdmin(instId, campaniaAReabrir.id, {
+      deadline: nuevaFecha,
+      status: "ACTIVE",
+    });
+
+    if (res.ok) {
+      setCampanias((prev) =>
+        prev.map((item) => (item.id === campaniaAReabrir.id ? res.datos : item)),
+      );
+      setMensajeExito(`Campaña de ${campaniaAReabrir.patientName} reabierta como Activa.`);
+      setTimeout(() => setMensajeExito(null), 3500);
+      setCampaniaAReabrir(null);
+    } else if (res.requiereLogin) {
+      router.replace("/login");
+      return;
+    } else {
+      setErrorReapertura(res.error);
+    }
+    setGuardandoReapertura(false);
+  }
+
   // Filtrado y ordenamiento en cliente
   const campaniasFiltradas = useMemo(() => {
     let lista = [...campanias];
@@ -210,8 +305,9 @@ export function PanelCampanias() {
     return lista;
   }, [campanias, busqueda, orden]);
 
-  // Métricas acumuladas globales
+  // Métricas acumuladas globales (utiliza totales institucionales para que no cambien por pestaña)
   const kpis = useMemo(() => {
+    if (metricasGlobales) return metricasGlobales;
     const totalCampanias = campanias.length;
     const activas = campanias.filter((c) => c.status === "ACTIVE").length;
     const totalVisitas = campanias.reduce((acc, c) => acc + (c.totalVisits || 0), 0);
@@ -220,7 +316,7 @@ export function PanelCampanias() {
       0,
     );
     return { totalCampanias, activas, totalVisitas, donantesConseguidos };
-  }, [campanias]);
+  }, [campanias, metricasGlobales]);
 
   return (
     <div className="space-y-6">
@@ -279,16 +375,15 @@ export function PanelCampanias() {
       {/* Barra de Filtros, Búsqueda y Orden */}
       <div className="rounded-xl border border-border bg-surface p-4 shadow-xs space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Tabs de estado */}
+          {/* Tabs de estado (Activas por defecto, Todas al final, sin Borradores) */}
           <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Filtrar por estado">
             {(
               [
-                { id: "ALL", label: "Todas" },
                 { id: "ACTIVE", label: "Activas" },
-                { id: "DRAFT", label: "Borradores" },
                 { id: "COMPLETED", label: "Completadas" },
                 { id: "EXPIRED", label: "Vencidas" },
                 { id: "CANCELLED", label: "Canceladas" },
+                { id: "ALL", label: "Todas" },
               ] as const
             ).map((tab) => (
               <button
@@ -535,8 +630,8 @@ export function PanelCampanias() {
                         <span className="hidden sm:inline">Landing</span>
                       </Link>
 
-                      {/* Botón −1 donante: para corregir un +1 de más */}
-                      {c.status === "ACTIVE" && actuales > 0 && (
+                      {/* Botón −1 donante: para corregir un +1 de más (habilitado en Activas y Completadas) */}
+                      {(c.status === "ACTIVE" || c.status === "COMPLETED") && actuales > 0 && (
                         <button
                           onClick={() => handleRestarDonante(c)}
                           disabled={accionEnCurso === c.id}
@@ -574,6 +669,19 @@ export function PanelCampanias() {
                           <span className="hidden md:inline">Completar</span>
                         </button>
                       )}
+
+                      {/* Botón Reabrir campaña (para vencidas o completadas) */}
+                      {(c.status === "EXPIRED" || c.status === "COMPLETED") && (
+                        <button
+                          onClick={() => abrirModalReapertura(c)}
+                          disabled={accionEnCurso === c.id}
+                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition-colors cursor-pointer disabled:opacity-50"
+                          title="Reabrir la campaña de donación con una nueva fecha límite"
+                        >
+                          <Icon name="recargar" size={14} />
+                          <span>Reabrir</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </article>
@@ -581,6 +689,77 @@ export function PanelCampanias() {
             })}
           </div>
         </div>
+      )}
+
+      {/* Modal de Reapertura de Campaña (BUG-04) */}
+      {campaniaAReabrir && (
+        <Dialogo
+          abierto={Boolean(campaniaAReabrir)}
+          alCerrar={() => setCampaniaAReabrir(null)}
+          titulo="Reabrir campaña de donación"
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleConfirmarReapertura();
+            }}
+            className="space-y-4 pt-2"
+          >
+            <p className="text-sm text-text-secondary leading-relaxed">
+              Estás por reabrir la campaña de{" "}
+              <strong className="text-text-primary font-semibold">
+                {campaniaAReabrir.patientName}
+              </strong>
+              . Pasará nuevamente a estado{" "}
+              <span className="font-semibold text-emerald-700">Activa</span> y
+              volverá a recibir donantes.
+            </p>
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="nueva-fecha"
+                className="block text-xs font-semibold text-text-primary"
+              >
+                Nueva fecha límite de donación
+              </label>
+              <input
+                id="nueva-fecha"
+                type="date"
+                required
+                min={new Date().toISOString().split("T")[0]}
+                value={nuevaFecha}
+                onChange={(e) => setNuevaFecha(e.target.value)}
+                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:border-navy-500 focus:outline-none"
+              />
+              <p className="text-xs text-text-muted">
+                Elegí hasta qué día estará vigente esta nueva etapa.
+              </p>
+            </div>
+
+            {errorReapertura && (
+              <p role="alert" className="text-xs font-medium text-danger">
+                {errorReapertura}
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                onClick={() => setCampaniaAReabrir(null)}
+                className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-text-secondary hover:bg-ink-100 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={guardandoReapertura || !nuevaFecha}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {guardandoReapertura ? "Reabriendo…" : "Confirmar y Reabrir"}
+              </button>
+            </div>
+          </form>
+        </Dialogo>
       )}
     </div>
   );
